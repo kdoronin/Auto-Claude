@@ -1,7 +1,15 @@
 import { useState, useEffect } from 'react';
-import { Settings2 } from 'lucide-react';
+import { Settings2, Download, RefreshCw, AlertCircle } from 'lucide-react';
 import { TooltipProvider } from './components/ui/tooltip';
 import { Button } from './components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from './components/ui/dialog';
 import {
   Tooltip,
   TooltipContent,
@@ -19,12 +27,13 @@ import { Context } from './components/Context';
 import { Ideation } from './components/Ideation';
 import { GitHubIssues } from './components/GitHubIssues';
 import { Changelog } from './components/Changelog';
-import { useProjectStore, loadProjects } from './stores/project-store';
+import { WelcomeScreen } from './components/WelcomeScreen';
+import { useProjectStore, loadProjects, addProject, initializeProject } from './stores/project-store';
 import { useTaskStore, loadTasks } from './stores/task-store';
 import { useSettingsStore, loadSettings } from './stores/settings-store';
 import { useTerminalStore } from './stores/terminal-store';
 import { useIpcListeners } from './hooks/useIpc';
-import type { Task } from '../shared/types';
+import type { Task, Project } from '../shared/types';
 
 export function App() {
   // Load IPC listeners for real-time updates
@@ -42,6 +51,11 @@ export function App() {
   const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false);
   const [isProjectSettingsOpen, setIsProjectSettingsOpen] = useState(false);
   const [activeView, setActiveView] = useState<SidebarView>('kanban');
+
+  // Initialize dialog state
+  const [showInitDialog, setShowInitDialog] = useState(false);
+  const [pendingProject, setPendingProject] = useState<Project | null>(null);
+  const [isInitializing, setIsInitializing] = useState(false);
 
   // Get selected project
   const selectedProject = projects.find((p) => p.id === selectedProjectId);
@@ -119,6 +133,42 @@ export function App() {
 
   const handleCloseTaskDetail = () => {
     setSelectedTask(null);
+  };
+
+  const handleAddProject = async () => {
+    try {
+      const path = await window.electronAPI.selectDirectory();
+      if (path) {
+        const project = await addProject(path);
+        if (project && !project.autoBuildPath) {
+          // Project doesn't have Auto Claude initialized, show init dialog
+          setPendingProject(project);
+          setShowInitDialog(true);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to add project:', error);
+    }
+  };
+
+  const handleInitialize = async () => {
+    if (!pendingProject) return;
+
+    setIsInitializing(true);
+    try {
+      const result = await initializeProject(pendingProject.id);
+      if (result?.success) {
+        setShowInitDialog(false);
+        setPendingProject(null);
+      }
+    } finally {
+      setIsInitializing(false);
+    }
+  };
+
+  const handleSkipInit = () => {
+    setShowInitDialog(false);
+    setPendingProject(null);
   };
 
   return (
@@ -209,14 +259,12 @@ export function App() {
                 )}
               </>
             ) : (
-              <div className="flex h-full items-center justify-center">
-                <div className="text-center">
-                  <h2 className="text-xl font-semibold text-foreground">Welcome to Auto-Build</h2>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Add a project from the sidebar to start building with AI
-                  </p>
-                </div>
-              </div>
+              <WelcomeScreen
+                projects={projects}
+                onNewProject={handleAddProject}
+                onOpenProject={handleAddProject}
+                onSelectProject={(projectId) => useProjectStore.getState().selectProject(projectId)}
+              />
             )}
           </main>
         </div>

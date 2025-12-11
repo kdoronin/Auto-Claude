@@ -82,8 +82,12 @@ function createWindow(): void {
   });
 }
 
-// Set app name before ready
-app.name = 'Auto Claude';
+// Set app name before ready (for dock tooltip on macOS in dev mode)
+app.setName('Auto Claude');
+if (process.platform === 'darwin') {
+  // Force the name to appear in dock on macOS
+  app.name = 'Auto Claude';
+}
 
 // Initialize the application
 app.whenReady().then(() => {
