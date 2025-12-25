@@ -136,21 +136,114 @@ The evidence suggests one of the following scenarios:
 
 ---
 
+### Subtask 1-3: Package.json Version and Git State Analysis
+
+**Commands Used:**
+- `git show v2.7.1:auto-claude-ui/package.json | jq -r '.version'`
+- `git show v2.7.0:auto-claude-ui/package.json | jq -r '.version'`
+- `git log --oneline v2.7.0..v2.7.1`
+- `git rev-parse v2.7.1^{commit}`
+
+#### Current Package.json State
+
+| Location | Current Version |
+|----------|-----------------|
+| `auto-claude-ui/package.json` (HEAD) | 2.7.1 |
+
+**Note:** The subtask referenced `apps/frontend/package.json`, but the actual path is `auto-claude-ui/package.json`.
+
+#### Version at Git Tags
+
+| Tag | Commit | package.json Version | Expected |
+|-----|--------|---------------------|----------|
+| v2.7.0 | `fe7290a8` | 2.6.5 | 2.7.0 |
+| v2.7.1 | `772a5006` | **2.7.0** ❌ | 2.7.1 |
+
+#### Commit Timeline
+
+```
+fc2075dd auto-claude: subtask-1-2 - Compare v2.7.1 artifacts...
+ff033a8e auto-claude: subtask-1-1 - List all files...
+8db71f3d Update version to 2.7.1 in package.json    <-- Version bump (AFTER tag)
+772a5006 2.7.1                                      <-- v2.7.1 TAG placed here
+d23fcd86 Enhance VirusTotal scan error handling...
+...more commits...
+fe7290a8 Release v2.7.0...                          <-- v2.7.0 TAG placed here
+```
+
+#### Root Cause Identified ✅
+
+**Problem:** The `v2.7.1` tag was placed on commit `772a5006` BEFORE the `package.json` version was updated to `2.7.1`.
+
+**Timeline of error:**
+1. Commit `772a5006` created with message "2.7.1" - tag `v2.7.1` placed here
+2. At this commit, `package.json` still contained version `2.7.0`
+3. The release workflow triggered on tag push, building with version `2.7.0` from `package.json`
+4. All artifacts named with `2.7.0` because that's what was in `package.json`
+5. Commit `8db71f3d` later updated `package.json` to `2.7.1` (but tag was already pushed)
+
+**This is a "tag before version bump" error.**
+
+The release workflow correctly read the version from `package.json`, but the tag was created before the version was bumped. The naming convention `${productName}-${version}-${platform}-${arch}.${ext}` correctly used version `2.7.0` because that's what was in `package.json` at the tagged commit.
+
+#### Verification of Build Configuration
+
+From `auto-claude-ui/package.json`:
+```json
+"build": {
+  "artifactName": "${productName}-${version}-${platform}-${arch}.${ext}",
+  ...
+}
+```
+
+This confirms the version is sourced from `package.json` during the build process.
+
+#### Git State Summary
+
+| Metric | Value |
+|--------|-------|
+| Current Branch | `auto-claude/009-latest-release-v2-7-1-has-wrong-files-attached` |
+| Working Tree | Clean |
+| Current HEAD package.json | 2.7.1 |
+| v2.7.1 tag package.json | 2.7.0 ❌ |
+| v2.7.0 tag package.json | 2.6.5 ❌ |
+
+**Note:** Both v2.7.0 and v2.7.1 tags have version mismatches in `package.json`, indicating a pattern of tagging before version bumping.
+
+---
+
+## Root Cause Summary
+
+| Factor | Finding |
+|--------|---------|
+| What happened? | v2.7.1 tag placed before package.json version bump |
+| Why? | Incorrect release process: tag first, version bump second |
+| Impact | All 7 artifacts have v2.7.0 in filename |
+| Evidence | `git show v2.7.1:auto-claude-ui/package.json` shows version 2.7.0 |
+
+---
+
 ## Next Steps
 
 1. ~~**Subtask 1-1:** Verify v2.7.1 assets~~ ✅ Complete
 2. ~~**Subtask 1-2:** Compare with v2.7.0 release and verify expected naming pattern~~ ✅ Complete
-3. **Subtask 1-3:** Check package.json version and git state
+3. ~~**Subtask 1-3:** Check package.json version and git state~~ ✅ Complete - ROOT CAUSE IDENTIFIED
 4. **Phase 2:** Investigate root cause (tag pointing to wrong commit, workflow issue, manual error)
 5. **Phase 3:** Implement fix (re-upload correct files or publish v2.7.2)
 6. **Phase 4:** Add validation to prevent future occurrences
 
 ---
 
-## Status: Phase 1, Subtask 1-2 Complete
+## Status: Phase 1 Complete - Root Cause Identified
 
-Comparison analysis complete:
-- v2.7.0 release has NO assets attached
-- v2.7.1 release has v2.7.0 artifacts attached (8 files)
-- Checksums file confirms v2.7.0 version was baked into the build
-- Timeline suggests possible workflow or tagging issue
+**Root Cause:** The v2.7.1 tag was created on commit `772a5006` which still had `package.json` version `2.7.0`. The version was only bumped to `2.7.1` in a subsequent commit `8db71f3d`, but by then the release workflow had already run with the old version.
+
+**Recommended Fix:**
+1. Delete the v2.7.1 tag
+2. Move the tag to a commit where package.json has version 2.7.1
+3. Re-trigger the release workflow, OR
+4. Mark v2.7.1 as deprecated and release v2.7.2 with correct versioning
+
+**Process Improvement Needed:**
+- Version bump should ALWAYS happen BEFORE tagging
+- Add CI validation to ensure tag version matches package.json version
