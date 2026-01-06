@@ -198,6 +198,11 @@ Examples:
         default=None,
         help="Base branch for creating worktrees (default: auto-detect or current branch)",
     )
+    parser.add_argument(
+        "--direct",
+        action="store_true",
+        help="Build directly in project without worktree isolation (default: use isolated worktree)",
+    )
 
     args = parser.parse_args()
 
@@ -327,6 +332,10 @@ Examples:
             # Pass base branch if specified (for worktree creation)
             if args.base_branch:
                 run_cmd.extend(["--base-branch", args.base_branch])
+
+            # Pass --direct flag if specified (skip worktree isolation)
+            if args.direct:
+                run_cmd.append("--direct")
 
             # Note: Model configuration for subsequent phases (planning, coding, qa)
             # is read from task_metadata.json by run.py, so we don't pass it here.

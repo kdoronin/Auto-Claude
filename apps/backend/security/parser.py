@@ -4,11 +4,88 @@ Command Parsing Utilities
 
 Functions for parsing and extracting commands from shell command strings.
 Handles compound commands, pipes, subshells, and various shell constructs.
+
+Windows Compatibility Note:
+--------------------------
+On Windows, commands containing paths with backslashes can cause shlex.split()
+to fail (e.g., incomplete commands with unclosed quotes). This module includes
+a fallback parser that extracts command names even from malformed commands,
+ensuring security validation can still proceed.
 """
 
 import os
 import re
 import shlex
+
+
+def _fallback_extract_commands(command_string: str) -> list[str]:
+    """
+    Fallback command extraction when shlex.split() fails.
+
+    Uses regex to extract command names from potentially malformed commands.
+    This is more permissive than shlex but ensures we can at least identify
+    the commands being executed for security validation.
+
+    Args:
+        command_string: The command string to parse
+
+    Returns:
+        List of command names extracted from the string
+    """
+    commands = []
+
+    # Shell keywords to skip
+    shell_keywords = {
+        "if", "then", "else", "elif", "fi", "for", "while",
+        "until", "do", "done", "case", "esac", "in", "function"
+    }
+
+    # First, split by common shell operators
+    # This regex splits on &&, ||, |, ; while being careful about quotes
+    # We're being permissive here since shlex already failed
+    parts = re.split(r'\s*(?:&&|\|\||\|)\s*|;\s*', command_string)
+
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+
+        # Skip variable assignments at the start (VAR=value cmd)
+        while re.match(r'^[A-Za-z_][A-Za-z0-9_]*=\S*\s+', part):
+            part = re.sub(r'^[A-Za-z_][A-Za-z0-9_]*=\S*\s+', '', part)
+
+        if not part:
+            continue
+
+        # Strategy: Extract command from the BEGINNING of the part
+        # Handle various formats:
+        # - Simple: python3, npm, git
+        # - Unix path: /usr/bin/python
+        # - Windows path: C:\Python312\python.exe
+        # - Quoted: "python.exe"
+
+        # First, try to get just the first whitespace-delimited token
+        first_token_match = re.match(r'^["\']?([^\s"\']+)', part)
+        if not first_token_match:
+            continue
+
+        first_token = first_token_match.group(1)
+
+        # Now extract just the command name from this token
+        # Handle Windows paths (C:\dir\cmd.exe) and Unix paths (/dir/cmd)
+        # Use os.path.basename for reliable path handling
+        cmd = os.path.basename(first_token)
+
+        # Remove Windows extensions
+        cmd = re.sub(r'\.(exe|cmd|bat|ps1|sh)$', '', cmd, flags=re.IGNORECASE)
+
+        # Clean up any remaining quotes or special chars at the start
+        cmd = re.sub(r'^["\'\\/]+', '', cmd)
+
+        if cmd and cmd.lower() not in shell_keywords:
+            commands.append(cmd)
+
+    return commands
 
 
 def split_command_segments(command_string: str) -> list[str]:
@@ -32,13 +109,44 @@ def split_command_segments(command_string: str) -> list[str]:
     return result
 
 
+def _contains_windows_path(command_string: str) -> bool:
+    """
+    Check if a command string contains Windows-style paths.
+
+    Windows paths with backslashes cause issues with shlex.split() because
+    backslashes are interpreted as escape characters in POSIX mode.
+
+    Args:
+        command_string: The command string to check
+
+    Returns:
+        True if Windows paths are detected
+    """
+    # Pattern matches:
+    # - Drive letter paths: C:\, D:\, etc.
+    # - Backslash in paths: foo\bar (not preceded by quote which could be escape)
+    return bool(re.search(r'[A-Za-z]:\\|(?<!["\'])\\[A-Za-z]', command_string))
+
+
 def extract_commands(command_string: str) -> list[str]:
     """
     Extract command names from a shell command string.
 
     Handles pipes, command chaining (&&, ||, ;), and subshells.
     Returns the base command names (without paths).
+
+    On Windows or when commands contain malformed quoting (common with
+    Windows paths in bash-style commands), falls back to regex-based
+    extraction to ensure security validation can proceed.
     """
+    # If command contains Windows paths, use fallback parser directly
+    # because shlex.split() interprets backslashes as escape characters
+    if _contains_windows_path(command_string):
+        fallback_commands = _fallback_extract_commands(command_string)
+        if fallback_commands:
+            return fallback_commands
+        # Continue with shlex if fallback found nothing
+
     commands = []
 
     # Split on semicolons that aren't inside quotes
@@ -53,7 +161,12 @@ def extract_commands(command_string: str) -> list[str]:
             tokens = shlex.split(segment)
         except ValueError:
             # Malformed command (unclosed quotes, etc.)
-            # Return empty to trigger block (fail-safe)
+            # This is common on Windows with backslash paths in quoted strings
+            # Use fallback parser instead of blocking
+            fallback_commands = _fallback_extract_commands(command_string)
+            if fallback_commands:
+                return fallback_commands
+            # If fallback also found nothing, return empty to trigger block
             return []
 
         if not tokens:

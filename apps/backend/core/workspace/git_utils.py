@@ -10,6 +10,9 @@ import json
 import subprocess
 from pathlib import Path
 
+# Re-export git executable functions from core.git_executable
+from core.git_executable import get_git_executable, run_git
+
 # Constants for merge limits
 MAX_FILE_LINES_FOR_AI = 5000  # Skip AI for files larger than this
 MAX_PARALLEL_AI_MERGES = 5  # Limit concurrent AI merge operations
@@ -289,15 +292,23 @@ def get_changed_files_from_branch(
     return files
 
 
+def _normalize_path(path: str) -> str:
+    """Normalize path separators to forward slashes for cross-platform comparison."""
+    return path.replace("\\", "/")
+
+
 def _is_auto_claude_file(file_path: str) -> bool:
-    """Check if a file is in the .auto-claude or auto-claude/specs directory."""
-    # These patterns cover the internal spec/build files that shouldn't be merged
+    """Check if a file is in the .auto-claude or auto-claude/specs directory.
+
+    Handles both forward slashes (Unix/Git output) and backslashes (Windows).
+    """
+    normalized = _normalize_path(file_path)
     excluded_patterns = [
         ".auto-claude/",
         "auto-claude/specs/",
     ]
     for pattern in excluded_patterns:
-        if file_path.startswith(pattern):
+        if normalized.startswith(pattern):
             return True
     return False
 
