@@ -1,0 +1,101 @@
+{
+  "autoPRReview": {
+    "title": "Auto-PR-Review",
+    "tooltip": "Examiner automatiquement les PRs et corriger les problèmes jusqu'à approbation humaine",
+    "requiresAutoFix": "Activez d'abord Auto-Fix",
+    "processing": "Traitement en cours...",
+    "status": {
+      "idle": "Inactif",
+      "starting": "Démarrage de l'examen",
+      "awaiting_checks": "En attente des vérifications",
+      "pr_reviewing": "Examen IA en cours",
+      "pr_fixing": "Correction des problèmes",
+      "pr_ready_to_merge": "Prêt pour l'examen humain",
+      "completed": "Terminé",
+      "cancelled": "Annulé",
+      "failed": "Échoué",
+      "max_iterations": "Nombre maximum d'itérations atteint"
+    },
+    "progress": {
+      "title": "Progression de l'examen PR",
+      "iteration": "Itération {{current}} sur {{max}}",
+      "elapsedTime": "Temps écoulé: {{time}}",
+      "currentSha": "SHA actuel: {{sha}}",
+      "shaChanged": "SHA modifié",
+      "ciChecks": "Vérifications CI",
+      "externalBots": "Examens des bots externes",
+      "findings": "Résultats",
+      "fixesApplied": "Corrections appliquées"
+    },
+    "ciChecks": {
+      "title": "État CI",
+      "passed": "{{count}} réussi(s)",
+      "failed": "{{count}} échoué(s)",
+      "pending": "{{count}} en attente",
+      "all_passed": "Toutes les vérifications réussies",
+      "some_failed": "Certaines vérifications ont échoué",
+      "waiting": "En attente des vérifications"
+    },
+    "bots": {
+      "title": "Examens des bots",
+      "verified": "Vérifié",
+      "unverified": "Non vérifié",
+      "pending": "En attente",
+      "noComments": "Aucun commentaire de bot pour le moment"
+    },
+    "messages": {
+      "started": "Auto-PR-Review démarré pour la PR #{{prNumber}}",
+      "iterationComplete": "Itération {{iteration}} terminée",
+      "checksComplete": "Toutes les vérifications terminées",
+      "fixesApplied": "{{count}} correction(s) appliquée(s)",
+      "readyForReview": "La PR est prête pour l'examen humain",
+      "humanApprovalRequired": "Approbation humaine requise avant la fusion"
+    },
+    "errors": {
+      "startFailed": "Échec du démarrage d'Auto-PR-Review",
+      "checksFailed": "Les vérifications CI ont échoué",
+      "fixFailed": "Échec de l'application de la correction",
+      "timeout": "L'examen a expiré",
+      "prClosed": "La PR a été fermée pendant l'examen",
+      "prMerged": "La PR a été fusionnée en externe",
+      "permissionDenied": "Permission refusée: Utilisateur non autorisé",
+      "configInvalid": "Configuration invalide",
+      "maxIterationsReached": "Nombre maximum d'itérations atteint - intervention manuelle requise",
+      "unknown": "Une erreur inconnue s'est produite"
+    },
+    "actions": {
+      "start": "Démarrer l'examen",
+      "cancel": "Annuler l'examen",
+      "cancelConfirm": "Êtes-vous sûr de vouloir annuler l'examen de la PR?",
+      "cancelConfirmTitle": "Annuler l'examen PR",
+      "cancelYes": "Oui, annuler",
+      "cancelNo": "Non, continuer",
+      "retry": "Réessayer",
+      "viewPR": "Voir la PR",
+      "refresh": "Actualiser le statut"
+    },
+    "config": {
+      "title": "Configuration Auto-PR-Review",
+      "enabled": "Activé",
+      "maxIterations": "Itérations maximum",
+      "maxIterationsHelp": "Nombre maximum d'itérations de correction avant intervention manuelle",
+      "ciTimeout": "Délai d'expiration CI",
+      "ciTimeoutHelp": "Temps d'attente pour les vérifications CI (en minutes)",
+      "botTimeout": "Délai d'expiration des bots",
+      "botTimeoutHelp": "Temps d'attente pour les examens des bots externes (en minutes)",
+      "pollInterval": "Intervalle de sondage",
+      "pollIntervalHelp": "Fréquence de vérification des mises à jour (en secondes)",
+      "requireHumanApproval": "Approbation humaine requise",
+      "requireHumanApprovalHelp": "Toujours exiger une approbation humaine avant la fusion (ne peut pas être désactivé)"
+    },
+    "accessibility": {
+      "progressCard": "Carte de progression Auto PR Review",
+      "iterationProgress": "Progression de l'examen: itération {{current}} sur {{max}}",
+      "ciStatus": "État CI: {{passed}} réussi(s), {{failed}} échoué(s), {{pending}} en attente",
+      "botStatus": "État des examens des bots: {{status}}",
+      "cancelButton": "Annuler l'examen PR en cours",
+      "expandDetails": "Développer pour voir plus de détails",
+      "collapseDetails": "Réduire les détails"
+    }
+  }
+}
