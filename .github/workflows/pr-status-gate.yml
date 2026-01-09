@@ -1,10 +1,9 @@
-name: PR Labels
+name: AC Review Labels
 
-# Simple PR labeling - size, area, type, and AC review detection
-# CI status is handled by GitHub's built-in check status display
+# Adds "Missing AC Approval" on PR open, updates labels on AC review
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened]
+    types: [opened, reopened]
   issue_comment:
     types: [created]
 
@@ -13,117 +12,49 @@ permissions:
   contents: read
 
 concurrency:
-  group: pr-labels-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+  group: ac-labels-${{ github.event.pull_request.number || github.event.issue.number }}
   cancel-in-progress: true
 
 jobs:
-  # Add size/area/type labels when PR is opened or updated
-  pr-labels:
-    name: PR Labels
+  # Add "Missing AC Approval" when PR is opened
+  initial-label:
+    name: Initial Label
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request_target'
     timeout-minutes: 5
 
     steps:
-      - name: Add labels
+      - name: Add Missing AC Approval label
         uses: actions/github-script@v7
         with:
           retries: 3
           script: |
-            const CONFIG = {
-              SIZE_THRESHOLDS: { XS: 10, S: 100, M: 500, L: 1000 },
-              TYPE_MAP: {
-                'feat': 'feature', 'fix': 'bug', 'docs': 'documentation',
-                'refactor': 'refactor', 'test': 'test', 'ci': 'ci',
-                'chore': 'chore', 'perf': 'performance', 'style': 'style', 'build': 'build'
-              },
-              AREA_PATHS: { frontend: 'apps/frontend/', backend: 'apps/backend/', ci: '.github/' },
-              SIZE_LABELS: ['size/XS', 'size/S', 'size/M', 'size/L', 'size/XL'],
-              AREA_LABELS: ['area/frontend', 'area/backend', 'area/fullstack', 'area/ci']
-            };
-
             const { owner, repo } = context.repo;
-            const pr = context.payload.pull_request;
-            const prNumber = pr.number;
-            const title = pr.title || '';
+            const prNumber = context.payload.pull_request.number;
 
-            console.log(`PR #${prNumber} - Adding labels`);
+            console.log(`PR #${prNumber} - Adding initial label`);
 
-            const labelsToAdd = [];
-            const labelsToRemove = [];
-
-            // 1. Type label from conventional commit
-            const match = title.slice(0, 200).match(/^(\w{1,20})(\([^)]{0,50}\))?(!)?:/);
-            if (match) {
-              const type = match[1].toLowerCase();
-              if (CONFIG.TYPE_MAP[type]) {
-                labelsToAdd.push(CONFIG.TYPE_MAP[type]);
-                console.log(`  Type: ${CONFIG.TYPE_MAP[type]}`);
-              }
-              if (match[3] === '!') labelsToAdd.push('breaking-change');
-            }
-
-            // 2. Area label from changed files
-            const files = await github.paginate(github.rest.pulls.listFiles, {
-              owner, repo, pull_number: prNumber, per_page: 100
-            });
-
-            const areas = { frontend: false, backend: false, ci: false };
-            for (const file of files) {
-              if (file.filename.startsWith(CONFIG.AREA_PATHS.frontend)) areas.frontend = true;
-              if (file.filename.startsWith(CONFIG.AREA_PATHS.backend)) areas.backend = true;
-              if (file.filename.startsWith(CONFIG.AREA_PATHS.ci)) areas.ci = true;
-            }
-
-            let areaLabel = null;
-            if (areas.frontend && areas.backend) areaLabel = 'area/fullstack';
-            else if (areas.frontend) areaLabel = 'area/frontend';
-            else if (areas.backend) areaLabel = 'area/backend';
-            else if (areas.ci) areaLabel = 'area/ci';
-
-            if (areaLabel) {
-              labelsToAdd.push(areaLabel);
-              CONFIG.AREA_LABELS.filter(l => l !== areaLabel).forEach(l => labelsToRemove.push(l));
-              console.log(`  Area: ${areaLabel}`);
-            }
-
-            // 3. Size label
-            const totalLines = (pr.additions || 0) + (pr.deletions || 0);
-            let sizeLabel = 'size/XL';
-            if (totalLines < CONFIG.SIZE_THRESHOLDS.XS) sizeLabel = 'size/XS';
-            else if (totalLines < CONFIG.SIZE_THRESHOLDS.S) sizeLabel = 'size/S';
-            else if (totalLines < CONFIG.SIZE_THRESHOLDS.M) sizeLabel = 'size/M';
-            else if (totalLines < CONFIG.SIZE_THRESHOLDS.L) sizeLabel = 'size/L';
-
-            labelsToAdd.push(sizeLabel);
-            CONFIG.SIZE_LABELS.filter(l => l !== sizeLabel).forEach(l => labelsToRemove.push(l));
-            console.log(`  Size: ${sizeLabel} (${totalLines} lines)`);
-
-            // Apply labels
-            const { data: currentLabels } = await github.rest.issues.listLabelsOnIssue({
+            // Check if already has any AC label
+            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
               owner, repo, issue_number: prNumber
             });
-            const currentNames = currentLabels.map(l => l.name);
+            const labelNames = labels.map(l => l.name);
 
-            // Remove old labels
-            for (const label of labelsToRemove) {
-              if (currentNames.includes(label)) {
-                try {
-                  await github.rest.issues.removeLabel({ owner, repo, issue_number: prNumber, name: label });
-                } catch (e) { /* ignore */ }
-              }
+            const AC_LABELS = ['Missing AC Approval', 'AC: Approved', 'AC: Changes Requested', 'AC: Blocked'];
+            const hasACLabel = AC_LABELS.some(l => labelNames.includes(l));
+
+            if (hasACLabel) {
+              console.log('Already has an AC label, skipping');
+              return;
             }
 
-            // Add new labels (filter out already present)
-            const toAdd = labelsToAdd.filter(l => !currentNames.includes(l));
-            if (toAdd.length > 0) {
-              await github.rest.issues.addLabels({ owner, repo, issue_number: prNumber, labels: toAdd });
-              console.log(`  Added: ${toAdd.join(', ')}`);
-            }
+            await github.rest.issues.addLabels({
+              owner, repo, issue_number: prNumber, labels: ['Missing AC Approval']
+            });
 
-            console.log(`✅ PR #${prNumber} labeled`);
+            console.log('✅ Added "Missing AC Approval" label');
 
-  # Detect Auto-Claude review verdicts from comments
+  # Detect AC review or @AutoClaudeCheck command
   ac-review:
     name: AC Review Detection
     runs-on: ubuntu-latest
@@ -133,13 +64,21 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - name: Check for Auto-Claude review
+      - name: Process comment
         uses: actions/github-script@v7
         with:
           retries: 3
           script: |
-            const REVIEW_LABELS = ['Missing AC Approval', 'AC: Approved', 'AC: Changes Requested', 'AC: Blocked', 'AC: Needs Re-review'];
-            const AC_PATTERNS = ['🤖 Auto Claude PR Review', 'Auto Claude Review', 'Auto-Claude Review'];
+            const AC_LABELS = ['Missing AC Approval', 'AC: Approved', 'AC: Changes Requested', 'AC: Blocked'];
+
+            // Patterns that identify Auto-Claude review comments
+            const AC_REVIEW_PATTERNS = [
+              'Generated by Auto Claude PR Review',
+              'Auto Claude PR Review',
+              'Auto-Claude Review'
+            ];
+
+            // Trusted sources
             const TRUSTED_BOTS = ['github-actions[bot]', 'auto-claude[bot]'];
             const TRUSTED_ASSOC = ['COLLABORATOR', 'MEMBER', 'OWNER'];
 
@@ -148,52 +87,153 @@ jobs:
             const comment = context.payload.comment;
             const body = (comment.body || '').slice(0, 5000);
 
-            // Check if trusted source
-            const isTrusted = (TRUSTED_BOTS.includes(comment.user.login) && comment.user.type === 'Bot') ||
-                              TRUSTED_ASSOC.includes(comment.author_association);
+            // Check if from trusted source
+            const isTrustedBot = TRUSTED_BOTS.includes(comment.user.login) && comment.user.type === 'Bot';
+            const isTrustedUser = TRUSTED_ASSOC.includes(comment.author_association);
 
-            if (!isTrusted) {
-              console.log('Not a trusted source, skipping');
+            // === Handle @AutoClaudeCheck command ===
+            if (body.includes('@AutoClaudeCheck')) {
+              if (!isTrustedBot && !isTrustedUser) {
+                console.log('Ignoring @AutoClaudeCheck from non-trusted source');
+                return;
+              }
+
+              console.log(`PR #${prNumber} - @AutoClaudeCheck command`);
+
+              // Get PR details
+              const { data: pr } = await github.rest.pulls.get({
+                owner, repo, pull_number: prNumber
+              });
+
+              // Get current labels
+              const { data: labels } = await github.rest.issues.listLabelsOnIssue({
+                owner, repo, issue_number: prNumber
+              });
+              const labelNames = labels.map(l => l.name);
+              const currentACLabel = AC_LABELS.find(l => labelNames.includes(l)) || 'None';
+
+              // Get all comments to find latest AC review
+              const { data: comments } = await github.rest.issues.listComments({
+                owner, repo, issue_number: prNumber, per_page: 100
+              });
+
+              let latestVerdict = null;
+              let latestTime = 0;
+
+              for (const c of comments) {
+                const cBody = (c.body || '').slice(0, 5000);
+                const isAC = AC_REVIEW_PATTERNS.some(p => cBody.includes(p));
+                if (!isAC) continue;
+
+                let verdict = null;
+                if (/Merge Verdict:\s*✅/.test(cBody) || cBody.includes('READY TO MERGE')) {
+                  verdict = 'AC: Approved';
+                } else if (/Merge Verdict:\s*🟡/.test(cBody) || cBody.includes('MERGE WITH CHANGES')) {
+                  verdict = 'AC: Approved';
+                } else if (/Merge Verdict:\s*🟠/.test(cBody) || cBody.includes('NEEDS REVISION')) {
+                  verdict = 'AC: Changes Requested';
+                } else if (/Merge Verdict:\s*🔴/.test(cBody) || cBody.includes('BLOCKED')) {
+                  verdict = 'AC: Blocked';
+                }
+
+                if (verdict) {
+                  const t = new Date(c.created_at).getTime();
+                  if (t > latestTime) {
+                    latestVerdict = verdict;
+                    latestTime = t;
+                  }
+                }
+              }
+
+              // Update label if needed
+              if (latestVerdict && !labelNames.includes(latestVerdict)) {
+                for (const l of AC_LABELS) {
+                  if (labelNames.includes(l)) {
+                    try { await github.rest.issues.removeLabel({ owner, repo, issue_number: prNumber, name: l }); } catch (e) {}
+                  }
+                }
+                await github.rest.issues.addLabels({ owner, repo, issue_number: prNumber, labels: [latestVerdict] });
+                console.log(`Updated label to: ${latestVerdict}`);
+              }
+
+              // Post status report
+              const statusEmoji = latestVerdict === 'AC: Approved' ? '✅' :
+                                  latestVerdict === 'AC: Changes Requested' ? '🟠' :
+                                  latestVerdict === 'AC: Blocked' ? '🔴' : '⏳';
+
+              const report = [
+                `## ${statusEmoji} PR Status Report`,
+                '',
+                '| Item | Status |',
+                '|------|--------|',
+                `| AC Review | ${latestVerdict || 'No review yet'} |`,
+                `| Current Label | ${latestVerdict || currentACLabel} |`,
+                '',
+                '---',
+                `<sub>Triggered by \`@AutoClaudeCheck\` from @${comment.user.login}</sub>`
+              ].join('\n');
+
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: prNumber, body: report
+              });
+
+              console.log('✅ Posted status report');
               return;
             }
 
-            // Check if AC comment
-            const isAC = AC_PATTERNS.some(p => body.includes(p));
-            if (!isAC) {
-              console.log('Not an Auto-Claude comment, skipping');
+            // === Handle AC Review comment ===
+            if (!isTrustedBot && !isTrustedUser) {
+              console.log(`Skipping: not a trusted source (${comment.user.login})`);
               return;
             }
+
+            const isACReview = AC_REVIEW_PATTERNS.some(p => body.includes(p));
+            if (!isACReview) {
+              console.log('Skipping: not an Auto-Claude review comment');
+              return;
+            }
+
+            console.log(`PR #${prNumber} - Processing Auto-Claude review`);
 
             // Parse verdict
             let verdict = null;
-            if (/Merge Verdict:\s*✅/i.test(body) || body.includes('Auto Claude Review - APPROVED')) verdict = 'AC: Approved';
-            else if (/Merge Verdict:\s*🟠/.test(body) || body.includes('NEEDS REVISION')) verdict = 'AC: Changes Requested';
-            else if (/Merge Verdict:\s*🔴/.test(body) || body.includes('BLOCKED')) verdict = 'AC: Blocked';
+            if (/Merge Verdict:\s*✅/.test(body) || body.includes('READY TO MERGE')) {
+              verdict = 'AC: Approved';
+            } else if (/Merge Verdict:\s*🟡/.test(body) || body.includes('MERGE WITH CHANGES')) {
+              verdict = 'AC: Approved';
+            } else if (/Merge Verdict:\s*🟠/.test(body) || body.includes('NEEDS REVISION')) {
+              verdict = 'AC: Changes Requested';
+            } else if (/Merge Verdict:\s*🔴/.test(body) || body.includes('BLOCKED')) {
+              verdict = 'AC: Blocked';
+            }
 
             if (!verdict) {
-              console.log('Could not parse verdict, skipping');
+              console.log('Could not parse verdict');
               return;
             }
 
-            console.log(`PR #${prNumber} - AC verdict: ${verdict}`);
+            console.log(`Detected verdict: ${verdict}`);
 
-            // Update label
+            // Get current labels
             const { data: labels } = await github.rest.issues.listLabelsOnIssue({
               owner, repo, issue_number: prNumber
             });
             const labelNames = labels.map(l => l.name);
 
             if (labelNames.includes(verdict)) {
-              console.log('Label already set');
+              console.log(`Label "${verdict}" already present`);
               return;
             }
 
-            // Remove old AC labels
-            for (const l of REVIEW_LABELS) {
+            // Remove old AC labels and add new one
+            for (const l of AC_LABELS) {
               if (labelNames.includes(l)) {
                 try { await github.rest.issues.removeLabel({ owner, repo, issue_number: prNumber, name: l }); } catch (e) {}
               }
             }
 
-            await github.rest.issues.addLabels({ owner, repo, issue_number: prNumber, labels: [verdict] });
-            console.log(`✅ Updated to: ${verdict}`);
+            await github.rest.issues.addLabels({
+              owner, repo, issue_number: prNumber, labels: [verdict]
+            });
+
+            console.log(`✅ Added label: ${verdict}`);
