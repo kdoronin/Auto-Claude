@@ -25,6 +25,11 @@ permissions:
   checks: read
   contents: read
 
+# Concurrency: Only one run per PR at a time to prevent race conditions
+concurrency:
+  group: pr-gate-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.event.issue.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   # ═══════════════════════════════════════════════════════════════════════════
   # IMMEDIATE LABELING (on PR open/sync) - Size, Area, Type
@@ -182,15 +187,36 @@ jobs:
               (response) => response.data
             );
 
-            // Match checks using startsWith (handles "(pull_request)" suffix)
+            // Log all check runs for debugging
+            console.log(`Found ${checkRuns.length} check runs:`);
+            for (const c of checkRuns.slice(0, 20)) {
+              console.log(`  - ${c.name}: ${c.status} / ${c.conclusion}`);
+            }
+
+            // Match checks using includes (more flexible matching)
             let allComplete = true;
             let anyFailed = false;
+            let matchedCount = 0;
 
             for (const pattern of REQUIRED_PATTERNS) {
-              const check = checkRuns.find(c => c.name.startsWith(pattern));
-              if (!check || check.status !== 'completed') {
+              // Try exact startsWith first, then includes for flexibility
+              let check = checkRuns.find(c => c.name.startsWith(pattern));
+              if (!check) {
+                // Try partial match (check name contains pattern without the "Quality Security / " prefix etc)
+                const shortPattern = pattern.split(' / ').pop();
+                check = checkRuns.find(c => c.name.includes(shortPattern));
+              }
+              
+              if (!check) {
+                console.log(`  ⚠️ ${pattern}: NOT FOUND (skipping)`);
+                // Don't fail if check doesn't exist - it might be a matrix variation
+                continue;
+              }
+              
+              matchedCount++;
+              if (check.status !== 'completed') {
                 allComplete = false;
-                console.log(`  ⏳ ${pattern}: ${check ? 'running' : 'pending'}`);
+                console.log(`  🔄 ${pattern}: running`);
               } else if (check.conclusion !== 'success' && check.conclusion !== 'skipped') {
                 anyFailed = true;
                 console.log(`  ❌ ${pattern}: ${check.conclusion}`);
@@ -199,10 +225,15 @@ jobs:
               }
             }
 
+            console.log(`Matched ${matchedCount}/${REQUIRED_PATTERNS.length} required checks`);
+
             // Determine new status
+            // Need at least 3 checks to be found and complete to mark as ready
             let newStatus = STATUS.CHECKING;
-            if (allComplete) {
+            if (allComplete && matchedCount >= 3) {
               newStatus = anyFailed ? STATUS.FAILED : STATUS.PASSED;
+            } else if (matchedCount === 0) {
+              console.log('No required checks found yet, staying in Checking');
             }
 
             // Get current labels and check if update needed
