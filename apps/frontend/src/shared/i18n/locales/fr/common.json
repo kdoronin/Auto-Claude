@@ -190,6 +190,7 @@
     "runFollowup": "Lancer le suivi",
     "aiReviewInProgress": "Révision IA en cours",
     "waitingForChanges": "En attente de modifications",
+    "autoReviewActive": "Auto-Révision",
     "reviewComplete": "Révision terminée",
     "reviewStatus": "Statut de révision",
     "files": "fichiers",

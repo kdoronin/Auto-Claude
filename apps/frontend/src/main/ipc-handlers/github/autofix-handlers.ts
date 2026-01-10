@@ -921,6 +921,91 @@ export function registerAutoFixHandlers(
   }>();
 
   /**
+   * Load persisted auto-PR review states on startup.
+   * This restores the in-memory state from disk so that active reviews
+   * are visible in the UI after app restart.
+   */
+  function loadPersistedAutoPRReviewStates(): void {
+    const project = findProjectForAutoPRReview();
+    if (!project) {
+      debugLog('No project available for loading persisted Auto-PR-Review states');
+      return;
+    }
+
+    const stateDir = path.join(getGitHubDir(project), 'pr_review_state');
+    const indexFile = path.join(stateDir, 'index.json');
+
+    try {
+      const indexData = JSON.parse(fs.readFileSync(indexFile, 'utf-8'));
+      const reviews = indexData.reviews || [];
+
+      for (const entry of reviews) {
+        // Only load active (non-terminal) states
+        const terminalStatuses = ['completed', 'failed', 'cancelled', 'max_iterations', 'ready_to_merge'];
+        if (terminalStatuses.includes(entry.status)) {
+          continue;
+        }
+
+        // Load full state from individual file
+        const stateFile = path.join(stateDir, `pr_${entry.pr_number}.json`);
+        try {
+          const stateData = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
+          const key = `${stateData.repo}#${entry.pr_number}`;
+
+          // Map backend status to frontend status
+          const statusMap: Record<string, AutoPRReviewProgress['status']> = {
+            'pending': 'awaiting_checks',
+            'awaiting_checks': 'awaiting_checks',
+            'reviewing': 'pr_reviewing',
+            'fixing': 'pr_fixing',
+            'ready_to_merge': 'pr_ready_to_merge',
+          };
+
+          const progress: AutoPRReviewProgress = {
+            prNumber: entry.pr_number,
+            repository: stateData.repo,
+            status: statusMap[entry.status] || 'awaiting_checks',
+            currentIteration: entry.current_iteration || 0,
+            maxIterations: stateData.max_iterations || 5,
+            startedAt: entry.started_at || new Date().toISOString(),
+            elapsedMs: 0,
+            ciChecks: stateData.ci_checks || [],
+            ciSummary: { total: 0, passed: 0, failed: 0, pending: 0 },
+            externalBots: [],
+            fixedFindingsCount: stateData.resolved_finding_ids?.length || 0,
+            remainingFindingsCount: stateData.pending_finding_ids?.length || 0,
+            isCancellable: false, // Recovered states are not cancellable (no subprocess)
+            currentActivity: 'Recovered from previous session - restart review to continue',
+          };
+
+          activeAutoPRReviews.set(key, {
+            progress,
+            abortController: new AbortController(), // Placeholder, not connected to any subprocess
+          });
+
+          debugLog('Loaded persisted Auto-PR-Review state', {
+            key,
+            status: progress.status,
+            iteration: progress.currentIteration,
+          });
+        } catch {
+          // Skip invalid state files
+        }
+      }
+
+      debugLog('Loaded persisted Auto-PR-Review states', {
+        count: activeAutoPRReviews.size,
+      });
+    } catch {
+      // Index file doesn't exist or is invalid - no states to load
+      debugLog('No persisted Auto-PR-Review states to load');
+    }
+  }
+
+  // Load persisted states on startup
+  loadPersistedAutoPRReviewStates();
+
+  /**
    * Get Auto-PR-Review configuration for a project
    */
   function getAutoPRReviewConfig(project: Project): { config: AutoPRReviewConfig; enabled: boolean } {

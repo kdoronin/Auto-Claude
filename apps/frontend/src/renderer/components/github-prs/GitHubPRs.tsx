@@ -3,6 +3,7 @@ import { GitPullRequest, RefreshCw, ExternalLink, Settings } from "lucide-react"
 import { useTranslation } from "react-i18next";
 import { useProjectStore } from "../../stores/project-store";
 import { useGitHubPRs, usePRFiltering } from "./hooks";
+import { useAutoPRReview } from "../github-issues/hooks/useAutoPRReview";
 import { PRList, PRDetail, PRFilterBar } from "./components";
 import { Button } from "../ui/button";
 import { ResizablePanels } from "../ui/resizable-panels";
@@ -99,6 +100,12 @@ export function GitHubPRs({ onOpenSettings, isActive = false }: GitHubPRsProps) 
     clearFilters,
     hasActiveFilters,
   } = usePRFiltering(prs, getReviewStateForPR);
+
+  // Auto-PR Review state for list indicator
+  const {
+    isReviewActive: isAutoPRReviewActive,
+    getReviewProgress: getAutoPRReviewProgress,
+  } = useAutoPRReview();
 
   const handleRunReview = useCallback(() => {
     if (selectedPRNumber) {
@@ -233,6 +240,9 @@ export function GitHubPRs({ onOpenSettings, isActive = false }: GitHubPRsProps) 
               getReviewStateForPR={getReviewStateForPR}
               onSelectPR={selectPR}
               onLoadMore={loadMore}
+              repoFullName={repoFullName}
+              isAutoPRReviewActive={isAutoPRReviewActive}
+              getAutoPRReviewProgress={getAutoPRReviewProgress}
             />
           </div>
         }

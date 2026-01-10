@@ -1,10 +1,11 @@
 import { useRef, useEffect, useCallback } from 'react';
-import { GitPullRequest, User, Clock, FileDiff, Loader2 } from 'lucide-react';
+import { GitPullRequest, User, Clock, FileDiff, Loader2, Bot } from 'lucide-react';
 import { ScrollArea } from '../../ui/scroll-area';
 import { Badge } from '../../ui/badge';
 import { cn } from '../../../lib/utils';
 import type { PRData, PRReviewProgress, PRReviewResult } from '../hooks/useGitHubPRs';
 import type { NewCommitsCheck } from '../../../../preload/api/modules/github-api';
+import type { AutoPRReviewProgress } from '../../github-issues/types';
 import { useTranslation } from 'react-i18next';
 
 /**
@@ -173,6 +174,12 @@ interface PRListProps {
   getReviewStateForPR: (prNumber: number) => PRReviewInfo | null;
   onSelectPR: (prNumber: number) => void;
   onLoadMore: () => void;
+  /** Repository full name for auto-PR review lookup */
+  repoFullName?: string | null;
+  /** Check if auto-PR review is active for a PR */
+  isAutoPRReviewActive?: (repoFullName: string, prNumber: number) => boolean;
+  /** Get auto-PR review progress for a PR */
+  getAutoPRReviewProgress?: (repoFullName: string, prNumber: number) => AutoPRReviewProgress | undefined;
 }
 
 function formatDate(dateString: string): string {
@@ -204,7 +211,10 @@ export function PRList({
   error,
   getReviewStateForPR,
   onSelectPR,
-  onLoadMore
+  onLoadMore,
+  repoFullName,
+  isAutoPRReviewActive,
+  getAutoPRReviewProgress,
 }: PRListProps) {
   const { t } = useTranslation('common');
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -315,6 +325,16 @@ export function PRList({
                       hasCommitsAfterPosting={reviewState?.newCommitsCheck?.hasCommitsAfterPosting ?? false}
                       t={t}
                     />
+                    {/* Auto-PR Review Active Indicator */}
+                    {repoFullName && isAutoPRReviewActive && isAutoPRReviewActive(repoFullName, pr.number) && (
+                      <Badge
+                        variant="outline"
+                        className="text-xs border-primary/50 text-primary bg-primary/10 animate-pulse"
+                      >
+                        <Bot className="h-3 w-3 mr-1" />
+                        {t('prReview.autoReviewActive')}
+                      </Badge>
+                    )}
                   </div>
                   <h3 className="font-medium text-sm truncate">{pr.title}</h3>
                   <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
