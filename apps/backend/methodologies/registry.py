@@ -9,11 +9,15 @@ Architecture Source: architecture.md#Plugin-Registry
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
 
 from apps.backend.methodologies.exceptions import PluginLoadError
 from apps.backend.methodologies.protocols import MethodologyInfo, MethodologyRunner
+
+if TYPE_CHECKING:
+    from apps.backend.methodologies.loader import MethodologyLoader
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +99,7 @@ class MethodologyRegistryImpl:
         )
         self._entries: list[RegistryEntry] = []
         self._loaded = False
+        self._loader: MethodologyLoader | None = None
 
     @staticmethod
     def _default_registry_path() -> Path:
@@ -344,6 +349,7 @@ class MethodologyRegistryImpl:
         """Get a methodology runner by name.
 
         This method loads the methodology plugin and returns its runner instance.
+        Uses lazy loading - the plugin is only loaded on first request and cached.
 
         Args:
             name: Name of the methodology to retrieve
@@ -353,18 +359,17 @@ class MethodologyRegistryImpl:
 
         Raises:
             PluginLoadError: If methodology is not installed or fails to load
+            ProtocolViolationError: If the plugin doesn't implement MethodologyRunner
         """
         self._ensure_loaded()
 
-        entry = self.get_entry(name)
-        if entry is None:
-            raise PluginLoadError(f"Methodology '{name}' is not installed")
+        # Lazy initialize the loader
+        if self._loader is None:
+            from apps.backend.methodologies.loader import MethodologyLoader
 
-        # Note: Actual plugin loading will be implemented in Story 1.4
-        # For now, raise an error indicating the plugin cannot be loaded
-        raise PluginLoadError(
-            f"Plugin loading not yet implemented. Methodology '{name}' found at {entry.path}"
-        )
+            self._loader = MethodologyLoader(self)
+
+        return self._loader.load_methodology(name)
 
     def install(self, path: str) -> None:
         """Install a methodology plugin from a path.
@@ -446,14 +451,19 @@ class MethodologyRegistryImpl:
             return False
         return entry.enabled
 
-    def add_entry(self, entry: RegistryEntry) -> None:
+    def add_entry(self, entry: RegistryEntry, persist: bool = True) -> None:
         """Add an entry to the registry.
 
         Args:
             entry: RegistryEntry to add
+            persist: If True (default), immediately save to disk.
+                Set to False for batch operations where you'll call save() manually.
         """
         self._ensure_loaded()
 
         # Remove existing entry with same name if present
         self._entries = [e for e in self._entries if e.name != entry.name]
         self._entries.append(entry)
+
+        if persist:
+            self.save()

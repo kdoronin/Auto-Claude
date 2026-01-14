@@ -84,6 +84,25 @@ class ProtocolViolationError(PluginError):
     - Method signatures don't match the Protocol definition
     - Return types don't match expected types
     - Runtime behavior violates Protocol semantics
+
+    Attributes:
+        methodology_name: Name of the methodology that violated the Protocol
+        missing_methods: List of method names that are missing or invalid
     """
 
-    pass
+    def __init__(
+        self,
+        message: str,
+        methodology_name: str = "",
+        missing_methods: list[str] | None = None,
+    ) -> None:
+        """Initialize with violation details.
+
+        Args:
+            message: Human-readable error message
+            methodology_name: Name of the methodology that violated the Protocol
+            missing_methods: List of method names that are missing or invalid
+        """
+        self.methodology_name = methodology_name
+        self.missing_methods = missing_methods or []
+        super().__init__(message)

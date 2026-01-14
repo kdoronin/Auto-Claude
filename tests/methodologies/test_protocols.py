@@ -559,8 +559,18 @@ class TestNegativeAndEdgeCases:
         e3 = PluginLoadError()
         assert str(e3) == ""
 
-        e4 = ProtocolViolationError()
+        e4 = ProtocolViolationError("")
         assert str(e4) == ""
+
+        # Test ProtocolViolationError with full arguments
+        e5 = ProtocolViolationError(
+            message="Missing methods",
+            methodology_name="test-plugin",
+            missing_methods=["get_phases", "execute_phase"],
+        )
+        assert e5.methodology_name == "test-plugin"
+        assert "get_phases" in e5.missing_methods
+        assert "execute_phase" in e5.missing_methods
 
     def test_exception_with_multiple_args(self):
         """Test exceptions handle multiple arguments."""
