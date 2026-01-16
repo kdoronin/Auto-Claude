@@ -515,6 +515,18 @@ export const IPC_CHANNELS = {
   CLAUDE_CODE_GET_INSTALLATIONS: 'claudeCode:getInstallations',
   CLAUDE_CODE_SET_ACTIVE_PATH: 'claudeCode:setActivePath',
 
+  // Checkpoint operations (Story 5.4)
+  /** Approve a checkpoint and resume execution */
+  CHECKPOINT_APPROVE: 'checkpoint:approve',
+  /** Request revision at a checkpoint */
+  CHECKPOINT_REVISE: 'checkpoint:revise',
+  /** Cancel task at a checkpoint */
+  CHECKPOINT_CANCEL: 'checkpoint:cancel',
+  /** Event: Checkpoint reached (main -> renderer) */
+  CHECKPOINT_REACHED: 'checkpoint:reached',
+  /** Event: Checkpoint resumed (main -> renderer) */
+  CHECKPOINT_RESUMED: 'checkpoint:resumed',
+
   // MCP Server health checks
   MCP_CHECK_HEALTH: 'mcp:checkHealth',           // Quick connectivity check
   MCP_TEST_CONNECTION: 'mcp:testConnection',     // Full MCP protocol test

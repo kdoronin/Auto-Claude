@@ -285,14 +285,40 @@ export function CheckpointDialog({
   const [expanded, setExpanded] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedback, setFeedback] = useState('');
+  // Story 5.4: Track whether we're approving or revising
+  const [feedbackMode, setFeedbackMode] = useState<'approve' | 'revise'>('revise');
 
-  // Handle revision submission
-  const handleRevisionSubmit = () => {
-    if (feedback.trim()) {
+  // Story 5.4: Handle feedback submission for both approve and revise modes
+  const handleFeedbackSubmit = () => {
+    if (feedbackMode === 'approve') {
+      // AC3: Approve with feedback - feedback is incorporated into next phase
+      onApprove(feedback.trim() || undefined);
+      setFeedback('');
+      setShowFeedback(false);
+    } else if (feedback.trim()) {
+      // Revise mode requires feedback
       onRevision(feedback.trim());
       setFeedback('');
       setShowFeedback(false);
     }
+  };
+
+  // Story 5.4: Handle approve with optional feedback
+  const handleApprove = () => {
+    // AC2: Approve without feedback - AI proceeds with current plan
+    onApprove(undefined);
+  };
+
+  // Story 5.4: Show feedback input for approval with guidance
+  const handleApproveWithFeedback = () => {
+    setFeedbackMode('approve');
+    setShowFeedback(true);
+  };
+
+  // Show feedback input for revision
+  const handleRequestRevision = () => {
+    setFeedbackMode('revise');
+    setShowFeedback(true);
   };
 
   // Reset state when dialog closes
@@ -301,6 +327,7 @@ export function CheckpointDialog({
       setExpanded(false);
       setShowFeedback(false);
       setFeedback('');
+      setFeedbackMode('revise');
     }
     onOpenChange(newOpen);
   };
@@ -355,14 +382,22 @@ export function CheckpointDialog({
             </div>
           )}
 
-          {/* Feedback Input (shown when requesting revision) */}
+          {/* Feedback Input (shown for revision or approve with feedback - Story 5.4) */}
           {showFeedback && (
             <div className="bg-card border border-border rounded-xl p-4 space-y-3">
-              <h4 className="text-sm font-medium">{t('checkpoints:dialog.feedbackTitle')}</h4>
+              <h4 className="text-sm font-medium">
+                {feedbackMode === 'approve'
+                  ? t('checkpoints:dialog.approvalFeedbackTitle')
+                  : t('checkpoints:dialog.feedbackTitle')}
+              </h4>
               <Textarea
                 value={feedback}
                 onChange={(e) => setFeedback(e.target.value)}
-                placeholder={t('checkpoints:dialog.feedbackPlaceholder')}
+                placeholder={
+                  feedbackMode === 'approve'
+                    ? t('checkpoints:dialog.approvalFeedbackPlaceholder')
+                    : t('checkpoints:dialog.feedbackPlaceholder')
+                }
                 className="min-h-[100px]"
                 autoFocus
               />
@@ -380,13 +415,18 @@ export function CheckpointDialog({
                 </Button>
                 <Button
                   size="sm"
-                  onClick={handleRevisionSubmit}
-                  disabled={!feedback.trim() || isProcessing}
+                  onClick={handleFeedbackSubmit}
+                  disabled={(feedbackMode === 'revise' && !feedback.trim()) || isProcessing}
                 >
                   {isProcessing ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       {t('checkpoints:dialog.submitting')}
+                    </>
+                  ) : feedbackMode === 'approve' ? (
+                    <>
+                      <Play className="mr-2 h-4 w-4" />
+                      {t('checkpoints:dialog.submitApprovalWithFeedback')}
                     </>
                   ) : (
                     <>
@@ -408,7 +448,7 @@ export function CheckpointDialog({
               variant="destructive"
               onClick={onCancel}
               disabled={isProcessing}
-              className="min-h-[44px] w-full sm:w-auto order-3 sm:order-1"
+              className="min-h-[44px] w-full sm:w-auto order-4 sm:order-1"
             >
               <X className="mr-2 h-4 w-4" />
               {t('checkpoints:dialog.cancel')}
@@ -417,19 +457,30 @@ export function CheckpointDialog({
             {/* Request Revision - Secondary */}
             <Button
               variant="secondary"
-              onClick={() => setShowFeedback(true)}
+              onClick={handleRequestRevision}
               disabled={isProcessing}
-              className="min-h-[44px] w-full sm:w-auto order-2"
+              className="min-h-[44px] w-full sm:w-auto order-3 sm:order-2"
             >
               <RefreshCw className="mr-2 h-4 w-4" />
               {t('checkpoints:dialog.revision')}
             </Button>
 
-            {/* Approve & Continue - Primary */}
+            {/* Story 5.4: Approve with Feedback - Ghost/Outline */}
             <Button
-              onClick={onApprove}
+              variant="outline"
+              onClick={handleApproveWithFeedback}
               disabled={isProcessing}
-              className="min-h-[44px] w-full sm:w-auto order-1 sm:order-3"
+              className="min-h-[44px] w-full sm:w-auto order-2 sm:order-3"
+            >
+              <Play className="mr-2 h-4 w-4" />
+              {t('checkpoints:dialog.approveWithFeedback')}
+            </Button>
+
+            {/* Approve & Continue - Primary (Story 5.4: AC2 - no feedback) */}
+            <Button
+              onClick={handleApprove}
+              disabled={isProcessing}
+              className="min-h-[44px] w-full sm:w-auto order-1 sm:order-4"
             >
               {isProcessing ? (
                 <>

@@ -67,8 +67,8 @@ export interface CheckpointDialogProps {
   open: boolean;
   /** Checkpoint information to display */
   checkpoint: CheckpointInfo | null;
-  /** Callback when user approves and wants to continue */
-  onApprove: () => void;
+  /** Callback when user approves and wants to continue (Story 5.4: supports optional feedback) */
+  onApprove: (feedback?: string) => void;
   /** Callback when user requests revision with feedback */
   onRevision: (feedback: string) => void;
   /** Callback when user cancels the task */

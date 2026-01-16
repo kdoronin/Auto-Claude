@@ -13,6 +13,10 @@
     "submitRevision": "Soumettre la révision",
     "processing": "Traitement...",
     "approve": "Approuver et continuer",
+    "approveWithFeedback": "Approuver avec commentaires",
+    "approvalFeedbackTitle": "Conseils pour la prochaine phase",
+    "approvalFeedbackPlaceholder": "Ajoutez des conseils ou du contexte pour l'IA à prendre en compte dans la prochaine phase (facultatif)...",
+    "submitApprovalWithFeedback": "Approuver avec commentaires",
     "revision": "Demander une révision",
     "cancel": "Annuler la tâche"
   },

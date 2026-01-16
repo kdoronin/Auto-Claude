@@ -13,6 +13,10 @@
     "submitRevision": "Submit Revision",
     "processing": "Processing...",
     "approve": "Approve & Continue",
+    "approveWithFeedback": "Approve with Feedback",
+    "approvalFeedbackTitle": "Guidance for Next Phase",
+    "approvalFeedbackPlaceholder": "Add any guidance or context for the AI to consider in the next phase (optional)...",
+    "submitApprovalWithFeedback": "Approve with Feedback",
     "revision": "Request Revision",
     "cancel": "Cancel Task"
   },
