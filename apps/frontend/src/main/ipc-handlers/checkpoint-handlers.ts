@@ -2,6 +2,7 @@
  * Checkpoint IPC handlers for Semi-Auto execution mode.
  *
  * Story Reference: Story 5.4 - Implement Checkpoint Approval Flow
+ * Story Reference: Story 5.6 - Implement Checkpoint Notifications
  * Architecture Source: architecture.md#Checkpoint-Service
  *
  * These handlers manage communication between the renderer process
@@ -21,6 +22,7 @@ import { AgentManager } from '../agent';
 import { safeSendToRenderer } from './utils';
 import { findTaskAndProject } from './task/shared';
 import { debugLog, debugError } from '../../shared/utils/debug-logger';
+import { notificationService } from '../notification-service';
 
 /**
  * Register all checkpoint-related IPC handlers.
@@ -231,6 +233,8 @@ export function registerCheckpointHandlers(
   /**
    * Forward checkpoint reached events from agent manager to renderer.
    * This event is emitted when the backend CheckpointService pauses at a checkpoint.
+   *
+   * Story 5.6: Send system notification when checkpoint is reached.
    */
   agentManager.on('checkpoint-reached', (taskId: string, checkpoint: CheckpointInfo) => {
     debugLog(`[checkpoint-reached] taskId: ${taskId}, checkpointId: ${checkpoint.checkpointId}`);
@@ -238,6 +242,7 @@ export function registerCheckpointHandlers(
     // Get project ID for multi-project filtering
     const { project } = findTaskAndProject(taskId);
 
+    // Forward to renderer
     safeSendToRenderer(
       getMainWindow,
       IPC_CHANNELS.CHECKPOINT_REACHED,
@@ -245,6 +250,21 @@ export function registerCheckpointHandlers(
       checkpoint,
       project?.id
     );
+
+    // Story 5.6: Send system notification
+    // AC1: Notification sent via Electron IPC + system notification
+    // AC2: System tray/dock shows indicator (handled in notificationService)
+    // AC3: Sound plays if enabled in settings (handled in notificationService)
+    notificationService.notifyCheckpointReached(taskId, checkpoint, project?.id);
+  });
+
+  /**
+   * Clear badge when checkpoint is resumed.
+   * Story 5.6 Task 3: Clear when checkpoint resolved.
+   */
+  agentManager.on('checkpoint-resumed', (taskId: string, checkpointId: string) => {
+    debugLog(`[checkpoint-resumed] taskId: ${taskId}, checkpointId: ${checkpointId}`);
+    notificationService.clearCheckpointBadge();
   });
 
   debugLog('[IPC] Checkpoint handlers registered');

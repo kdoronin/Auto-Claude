@@ -309,6 +309,8 @@
     "onTaskFailedDescription": "Notify when a task encounters an error",
     "onReviewNeeded": "On Review Needed",
     "onReviewNeededDescription": "Notify when QA requires your review",
+    "onCheckpointReached": "On Checkpoint Reached",
+    "onCheckpointReachedDescription": "Notify when a Semi-Auto task reaches a checkpoint requiring your input",
     "sound": "Sound",
     "soundDescription": "Play sound with notifications"
   },

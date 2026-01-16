@@ -34,6 +34,8 @@ export interface NotificationSettings {
   onReviewNeeded: boolean;
   /** Notify when a task is escalated and needs user attention (Story 4.5) */
   onTaskEscalated?: boolean;
+  /** Notify when a checkpoint is reached in Semi-Auto mode (Story 5.6) */
+  onCheckpointReached?: boolean;
   sound: boolean;
 }
 
