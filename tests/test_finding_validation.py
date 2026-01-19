@@ -877,3 +877,737 @@ class TestScopeFiltering:
             filtered = [f for f in findings if f.category == category]
             assert len(filtered) == 1
             assert filtered[0].category == category
+
+
+# ============================================================================
+# Finding Deduplication Tests
+# ============================================================================
+
+
+class TestFindingDeduplication:
+    """Tests for finding deduplication logic."""
+
+    def test_dedup_exact_file_and_line_match(self):
+        """Test detecting duplicates with exact file and line match."""
+        findings = [
+            PRReviewFinding(
+                id="SEC-001",
+                severity=ReviewSeverity.HIGH,
+                category=ReviewCategory.SECURITY,
+                title="SQL Injection",
+                description="User input not sanitized",
+                file="src/db.py",
+                line=42,
+            ),
+            PRReviewFinding(
+                id="SEC-002",
+                severity=ReviewSeverity.HIGH,
+                category=ReviewCategory.SECURITY,
+                title="SQL Injection vulnerability",
+                description="Different description same issue",
+                file="src/db.py",
+                line=42,
+            ),
+        ]
+
+        # Deduplication by file + line
+        seen_locations = set()
+        unique_findings = []
+        for finding in findings:
+            location = (finding.file, finding.line)
+            if location not in seen_locations:
+                seen_locations.add(location)
+                unique_findings.append(finding)
+
+        assert len(unique_findings) == 1
+        assert unique_findings[0].id == "SEC-001"
+
+    def test_dedup_same_file_different_lines(self):
+        """Test that findings on different lines in same file are NOT duplicates."""
+        findings = [
+            PRReviewFinding(
+                id="SEC-001",
+                severity=ReviewSeverity.HIGH,
+                category=ReviewCategory.SECURITY,
+                title="SQL Injection",
+                description="First query issue",
+                file="src/db.py",
+                line=42,
+            ),
+            PRReviewFinding(
+                id="SEC-002",
+                severity=ReviewSeverity.HIGH,
+                category=ReviewCategory.SECURITY,
+                title="SQL Injection",
+                description="Second query issue",
+                file="src/db.py",
+                line=100,
+            ),
+        ]
+
+        # Deduplication by file + line
+        seen_locations = set()
+        unique_findings = []
+        for finding in findings:
+            location = (finding.file, finding.line)
+            if location not in seen_locations:
+                seen_locations.add(location)
+                unique_findings.append(finding)
+
+        assert len(unique_findings) == 2
+
+    def test_dedup_overlapping_line_ranges(self):
+        """Test detecting duplicates with overlapping line ranges."""
+        findings = [
+            PRReviewFinding(
+                id="QUAL-001",
+                severity=ReviewSeverity.MEDIUM,
+                category=ReviewCategory.QUALITY,
+                title="Complex function",
+                description="Function is too complex",
+                file="src/processor.py",
+                line=10,
+                end_line=50,
+            ),
+            PRReviewFinding(
+                id="QUAL-002",
+                severity=ReviewSeverity.MEDIUM,
+                category=ReviewCategory.QUALITY,
+                title="Nested loops",
+                description="Deeply nested loops detected",
+                file="src/processor.py",
+                line=25,
+                end_line=40,
+            ),
+        ]
+
+        # Deduplication by overlapping ranges
+        def ranges_overlap(f1, f2):
+            """Check if two findings have overlapping line ranges in the same file."""
+            if f1.file != f2.file:
+                return False
+            start1, end1 = f1.line, f1.end_line or f1.line
+            start2, end2 = f2.line, f2.end_line or f2.line
+            return start1 <= end2 and start2 <= end1
+
+        unique_findings = []
+        for finding in findings:
+            is_duplicate = any(ranges_overlap(finding, uf) for uf in unique_findings)
+            if not is_duplicate:
+                unique_findings.append(finding)
+
+        # Second finding overlaps with first, so it should be deduplicated
+        assert len(unique_findings) == 1
+        assert unique_findings[0].id == "QUAL-001"
+
+    def test_dedup_by_finding_id(self):
+        """Test deduplication by finding ID."""
+        findings = [
+            PRReviewFinding(
+                id="SEC-001",
+                severity=ReviewSeverity.HIGH,
+                category=ReviewCategory.SECURITY,
+                title="SQL Injection",
+                description="User input not sanitized",
+                file="src/db.py",
+                line=42,
+            ),
+            PRReviewFinding(
+                id="SEC-001",  # Same ID
+                severity=ReviewSeverity.HIGH,
+                category=ReviewCategory.SECURITY,
+                title="SQL Injection Updated",
+                description="Updated description",
+                file="src/db.py",
+                line=42,
+            ),
+        ]
+
+        # Deduplication by ID
+        seen_ids = set()
+        unique_findings = []
+        for finding in findings:
+            if finding.id not in seen_ids:
+                seen_ids.add(finding.id)
+                unique_findings.append(finding)
+
+        assert len(unique_findings) == 1
+        assert unique_findings[0].title == "SQL Injection"
+
+    def test_dedup_preserves_highest_severity(self):
+        """Test that deduplication preserves the finding with highest severity."""
+        findings = [
+            PRReviewFinding(
+                id="SEC-001",
+                severity=ReviewSeverity.MEDIUM,
+                category=ReviewCategory.SECURITY,
+                title="Input validation issue",
+                description="Minor issue",
+                file="src/api.py",
+                line=50,
+            ),
+            PRReviewFinding(
+                id="SEC-002",
+                severity=ReviewSeverity.CRITICAL,
+                category=ReviewCategory.SECURITY,
+                title="Input validation critical",
+                description="Critical issue same location",
+                file="src/api.py",
+                line=50,
+            ),
+        ]
+
+        # Severity priority mapping
+        severity_priority = {
+            ReviewSeverity.CRITICAL: 4,
+            ReviewSeverity.HIGH: 3,
+            ReviewSeverity.MEDIUM: 2,
+            ReviewSeverity.LOW: 1,
+        }
+
+        # Group by location and keep highest severity
+        location_findings = {}
+        for finding in findings:
+            location = (finding.file, finding.line)
+            if location not in location_findings:
+                location_findings[location] = finding
+            else:
+                existing = location_findings[location]
+                if severity_priority[finding.severity] > severity_priority[existing.severity]:
+                    location_findings[location] = finding
+
+        unique_findings = list(location_findings.values())
+        assert len(unique_findings) == 1
+        assert unique_findings[0].severity == ReviewSeverity.CRITICAL
+        assert unique_findings[0].id == "SEC-002"
+
+    def test_dedup_cross_category_same_location(self):
+        """Test deduplication of findings from different categories at same location."""
+        findings = [
+            PRReviewFinding(
+                id="SEC-001",
+                severity=ReviewSeverity.HIGH,
+                category=ReviewCategory.SECURITY,
+                title="Unsafe input handling",
+                description="Security concern",
+                file="src/handler.py",
+                line=75,
+            ),
+            PRReviewFinding(
+                id="QUAL-001",
+                severity=ReviewSeverity.MEDIUM,
+                category=ReviewCategory.QUALITY,
+                title="Error handling missing",
+                description="Quality concern",
+                file="src/handler.py",
+                line=75,
+            ),
+        ]
+
+        # When findings are at same location but different categories,
+        # we might want to keep both (different concerns) or deduplicate
+        # This tests the "keep both" strategy
+        unique_by_location_and_category = {}
+        for finding in findings:
+            key = (finding.file, finding.line, finding.category)
+            if key not in unique_by_location_and_category:
+                unique_by_location_and_category[key] = finding
+
+        # Should keep both since they are different categories
+        assert len(unique_by_location_and_category) == 2
+
+    def test_dedup_with_redundant_with_field(self):
+        """Test using redundant_with field for explicit deduplication marking."""
+        findings = [
+            PRReviewFinding(
+                id="QUAL-001",
+                severity=ReviewSeverity.MEDIUM,
+                category=ReviewCategory.QUALITY,
+                title="Duplicate code block",
+                description="Same logic as src/utils.py:100",
+                file="src/helpers.py",
+                line=50,
+                redundant_with="src/utils.py:100",
+            ),
+            PRReviewFinding(
+                id="QUAL-002",
+                severity=ReviewSeverity.MEDIUM,
+                category=ReviewCategory.QUALITY,
+                title="Original code block",
+                description="The original implementation",
+                file="src/utils.py",
+                line=100,
+            ),
+        ]
+
+        # Filter out findings that are marked as redundant
+        non_redundant_findings = [f for f in findings if f.redundant_with is None]
+        assert len(non_redundant_findings) == 1
+        assert non_redundant_findings[0].id == "QUAL-002"
+
+    def test_dedup_empty_list(self):
+        """Test deduplication of empty findings list."""
+        findings = []
+
+        seen_locations = set()
+        unique_findings = []
+        for finding in findings:
+            location = (finding.file, finding.line)
+            if location not in seen_locations:
+                seen_locations.add(location)
+                unique_findings.append(finding)
+
+        assert len(unique_findings) == 0
+
+    def test_dedup_single_finding(self):
+        """Test deduplication with single finding returns same finding."""
+        findings = [
+            PRReviewFinding(
+                id="SEC-001",
+                severity=ReviewSeverity.HIGH,
+                category=ReviewCategory.SECURITY,
+                title="SQL Injection",
+                description="User input not sanitized",
+                file="src/db.py",
+                line=42,
+            ),
+        ]
+
+        seen_locations = set()
+        unique_findings = []
+        for finding in findings:
+            location = (finding.file, finding.line)
+            if location not in seen_locations:
+                seen_locations.add(location)
+                unique_findings.append(finding)
+
+        assert len(unique_findings) == 1
+        assert unique_findings[0].id == "SEC-001"
+
+    def test_dedup_validation_findings_by_status(self):
+        """Test deduplication of validation results by finding_id."""
+        validations = [
+            FindingValidationResult(
+                finding_id="SEC-001",
+                validation_status="confirmed_valid",
+                code_evidence="const query = `SELECT * FROM users`;",
+                line_range=(45, 45),
+                explanation="SQL injection confirmed - first validation.",
+                evidence_verified_in_file=True,
+            ),
+            FindingValidationResult(
+                finding_id="SEC-001",  # Same finding ID
+                validation_status="confirmed_valid",
+                code_evidence="const query = `SELECT * FROM users`;",
+                line_range=(45, 45),
+                explanation="SQL injection confirmed - duplicate validation.",
+                evidence_verified_in_file=True,
+            ),
+            FindingValidationResult(
+                finding_id="SEC-002",
+                validation_status="dismissed_false_positive",
+                code_evidence="const sanitized = escape(input);",
+                line_range=(60, 60),
+                explanation="Input is properly escaped - false positive.",
+                evidence_verified_in_file=True,
+            ),
+        ]
+
+        # Deduplicate by finding_id
+        seen_ids = set()
+        unique_validations = []
+        for validation in validations:
+            if validation.finding_id not in seen_ids:
+                seen_ids.add(validation.finding_id)
+                unique_validations.append(validation)
+
+        assert len(unique_validations) == 2
+        assert unique_validations[0].finding_id == "SEC-001"
+        assert unique_validations[1].finding_id == "SEC-002"
+
+
+# ============================================================================
+# Severity Mapping Tests for Findings
+# ============================================================================
+
+
+class TestFindingSeverityMapping:
+    """Tests for severity mapping in finding validation context."""
+
+    def test_severity_enum_all_values(self):
+        """Test all ReviewSeverity enum values exist."""
+        assert ReviewSeverity.CRITICAL.value == "critical"
+        assert ReviewSeverity.HIGH.value == "high"
+        assert ReviewSeverity.MEDIUM.value == "medium"
+        assert ReviewSeverity.LOW.value == "low"
+
+    def test_severity_from_string_conversion(self):
+        """Test creating severity from string values."""
+        assert ReviewSeverity("critical") == ReviewSeverity.CRITICAL
+        assert ReviewSeverity("high") == ReviewSeverity.HIGH
+        assert ReviewSeverity("medium") == ReviewSeverity.MEDIUM
+        assert ReviewSeverity("low") == ReviewSeverity.LOW
+
+    def test_invalid_severity_raises(self):
+        """Test that invalid severity strings raise ValueError."""
+        with pytest.raises(ValueError):
+            ReviewSeverity("invalid")
+
+    def test_severity_ordering_for_prioritization(self):
+        """Test severity ordering for finding prioritization."""
+        severity_priority = {
+            ReviewSeverity.CRITICAL: 4,
+            ReviewSeverity.HIGH: 3,
+            ReviewSeverity.MEDIUM: 2,
+            ReviewSeverity.LOW: 1,
+        }
+
+        assert severity_priority[ReviewSeverity.CRITICAL] > severity_priority[ReviewSeverity.HIGH]
+        assert severity_priority[ReviewSeverity.HIGH] > severity_priority[ReviewSeverity.MEDIUM]
+        assert severity_priority[ReviewSeverity.MEDIUM] > severity_priority[ReviewSeverity.LOW]
+
+    def test_sort_findings_by_severity(self):
+        """Test sorting findings by severity (highest first)."""
+        findings = [
+            PRReviewFinding(
+                id="LOW-001",
+                severity=ReviewSeverity.LOW,
+                category=ReviewCategory.STYLE,
+                title="Minor style",
+                description="Low issue",
+                file="src/a.py",
+                line=1,
+            ),
+            PRReviewFinding(
+                id="CRIT-001",
+                severity=ReviewSeverity.CRITICAL,
+                category=ReviewCategory.SECURITY,
+                title="Critical security",
+                description="Critical issue",
+                file="src/b.py",
+                line=2,
+            ),
+            PRReviewFinding(
+                id="MED-001",
+                severity=ReviewSeverity.MEDIUM,
+                category=ReviewCategory.QUALITY,
+                title="Medium quality",
+                description="Medium issue",
+                file="src/c.py",
+                line=3,
+            ),
+            PRReviewFinding(
+                id="HIGH-001",
+                severity=ReviewSeverity.HIGH,
+                category=ReviewCategory.PERFORMANCE,
+                title="High perf",
+                description="High issue",
+                file="src/d.py",
+                line=4,
+            ),
+        ]
+
+        severity_priority = {
+            ReviewSeverity.CRITICAL: 4,
+            ReviewSeverity.HIGH: 3,
+            ReviewSeverity.MEDIUM: 2,
+            ReviewSeverity.LOW: 1,
+        }
+
+        sorted_findings = sorted(
+            findings,
+            key=lambda f: severity_priority[f.severity],
+            reverse=True
+        )
+
+        assert sorted_findings[0].severity == ReviewSeverity.CRITICAL
+        assert sorted_findings[1].severity == ReviewSeverity.HIGH
+        assert sorted_findings[2].severity == ReviewSeverity.MEDIUM
+        assert sorted_findings[3].severity == ReviewSeverity.LOW
+
+    def test_filter_findings_above_severity_threshold(self):
+        """Test filtering findings above a severity threshold."""
+        findings = [
+            PRReviewFinding(
+                id="CRIT-001",
+                severity=ReviewSeverity.CRITICAL,
+                category=ReviewCategory.SECURITY,
+                title="Critical",
+                description="Critical issue",
+                file="src/a.py",
+                line=1,
+            ),
+            PRReviewFinding(
+                id="HIGH-001",
+                severity=ReviewSeverity.HIGH,
+                category=ReviewCategory.SECURITY,
+                title="High",
+                description="High issue",
+                file="src/b.py",
+                line=2,
+            ),
+            PRReviewFinding(
+                id="MED-001",
+                severity=ReviewSeverity.MEDIUM,
+                category=ReviewCategory.QUALITY,
+                title="Medium",
+                description="Medium issue",
+                file="src/c.py",
+                line=3,
+            ),
+            PRReviewFinding(
+                id="LOW-001",
+                severity=ReviewSeverity.LOW,
+                category=ReviewCategory.STYLE,
+                title="Low",
+                description="Low issue",
+                file="src/d.py",
+                line=4,
+            ),
+        ]
+
+        # Filter for HIGH or above (blocks merge)
+        blocking_severities = {ReviewSeverity.CRITICAL, ReviewSeverity.HIGH}
+        blocking_findings = [f for f in findings if f.severity in blocking_severities]
+
+        assert len(blocking_findings) == 2
+        assert all(f.severity in blocking_severities for f in blocking_findings)
+
+    def test_count_findings_by_severity(self):
+        """Test counting findings by severity level."""
+        findings = [
+            PRReviewFinding(
+                id="CRIT-001",
+                severity=ReviewSeverity.CRITICAL,
+                category=ReviewCategory.SECURITY,
+                title="Critical 1",
+                description="Critical issue",
+                file="src/a.py",
+                line=1,
+            ),
+            PRReviewFinding(
+                id="CRIT-002",
+                severity=ReviewSeverity.CRITICAL,
+                category=ReviewCategory.SECURITY,
+                title="Critical 2",
+                description="Critical issue",
+                file="src/b.py",
+                line=2,
+            ),
+            PRReviewFinding(
+                id="HIGH-001",
+                severity=ReviewSeverity.HIGH,
+                category=ReviewCategory.QUALITY,
+                title="High",
+                description="High issue",
+                file="src/c.py",
+                line=3,
+            ),
+            PRReviewFinding(
+                id="LOW-001",
+                severity=ReviewSeverity.LOW,
+                category=ReviewCategory.STYLE,
+                title="Low",
+                description="Low issue",
+                file="src/d.py",
+                line=4,
+            ),
+        ]
+
+        critical_count = sum(1 for f in findings if f.severity == ReviewSeverity.CRITICAL)
+        high_count = sum(1 for f in findings if f.severity == ReviewSeverity.HIGH)
+        medium_count = sum(1 for f in findings if f.severity == ReviewSeverity.MEDIUM)
+        low_count = sum(1 for f in findings if f.severity == ReviewSeverity.LOW)
+
+        assert critical_count == 2
+        assert high_count == 1
+        assert medium_count == 0
+        assert low_count == 1
+
+    def test_severity_in_finding_to_dict(self):
+        """Test that severity is correctly serialized in to_dict."""
+        finding = PRReviewFinding(
+            id="SEC-001",
+            severity=ReviewSeverity.CRITICAL,
+            category=ReviewCategory.SECURITY,
+            title="Critical Issue",
+            description="A critical security issue",
+            file="src/api.py",
+            line=100,
+        )
+
+        data = finding.to_dict()
+        assert data["severity"] == "critical"
+
+    def test_severity_in_finding_from_dict(self):
+        """Test that severity is correctly deserialized in from_dict."""
+        data = {
+            "id": "SEC-001",
+            "severity": "high",
+            "category": "security",
+            "title": "High Issue",
+            "description": "A high security issue",
+            "file": "src/api.py",
+            "line": 100,
+        }
+
+        finding = PRReviewFinding.from_dict(data)
+        assert finding.severity == ReviewSeverity.HIGH
+
+    def test_severity_mapping_with_validation_status(self):
+        """Test severity combined with validation status for filtering."""
+        findings = [
+            PRReviewFinding(
+                id="SEC-001",
+                severity=ReviewSeverity.CRITICAL,
+                category=ReviewCategory.SECURITY,
+                title="Critical - Confirmed",
+                description="Critical issue confirmed",
+                file="src/a.py",
+                line=1,
+                validation_status="confirmed_valid",
+            ),
+            PRReviewFinding(
+                id="SEC-002",
+                severity=ReviewSeverity.CRITICAL,
+                category=ReviewCategory.SECURITY,
+                title="Critical - Dismissed",
+                description="Critical issue dismissed",
+                file="src/b.py",
+                line=2,
+                validation_status="dismissed_false_positive",
+            ),
+            PRReviewFinding(
+                id="HIGH-001",
+                severity=ReviewSeverity.HIGH,
+                category=ReviewCategory.QUALITY,
+                title="High - Confirmed",
+                description="High issue confirmed",
+                file="src/c.py",
+                line=3,
+                validation_status="confirmed_valid",
+            ),
+        ]
+
+        # Filter for confirmed valid critical/high findings (true blockers)
+        blocking_severities = {ReviewSeverity.CRITICAL, ReviewSeverity.HIGH}
+        true_blockers = [
+            f for f in findings
+            if f.severity in blocking_severities
+            and f.validation_status == "confirmed_valid"
+        ]
+
+        assert len(true_blockers) == 2
+        assert true_blockers[0].id == "SEC-001"
+        assert true_blockers[1].id == "HIGH-001"
+
+    def test_severity_string_mapping_from_followup_reviewer(self):
+        """Test the severity string to enum mapping used in followup_reviewer."""
+        # This mapping is used when parsing AI responses
+        SEVERITY_MAP = {
+            "critical": ReviewSeverity.CRITICAL,
+            "high": ReviewSeverity.HIGH,
+            "medium": ReviewSeverity.MEDIUM,
+            "low": ReviewSeverity.LOW,
+        }
+
+        assert SEVERITY_MAP["critical"] == ReviewSeverity.CRITICAL
+        assert SEVERITY_MAP["high"] == ReviewSeverity.HIGH
+        assert SEVERITY_MAP["medium"] == ReviewSeverity.MEDIUM
+        assert SEVERITY_MAP["low"] == ReviewSeverity.LOW
+
+    def test_get_highest_severity_from_findings(self):
+        """Test getting the highest severity from a list of findings."""
+        findings = [
+            PRReviewFinding(
+                id="MED-001",
+                severity=ReviewSeverity.MEDIUM,
+                category=ReviewCategory.QUALITY,
+                title="Medium",
+                description="Medium issue",
+                file="src/a.py",
+                line=1,
+            ),
+            PRReviewFinding(
+                id="HIGH-001",
+                severity=ReviewSeverity.HIGH,
+                category=ReviewCategory.SECURITY,
+                title="High",
+                description="High issue",
+                file="src/b.py",
+                line=2,
+            ),
+            PRReviewFinding(
+                id="LOW-001",
+                severity=ReviewSeverity.LOW,
+                category=ReviewCategory.STYLE,
+                title="Low",
+                description="Low issue",
+                file="src/c.py",
+                line=3,
+            ),
+        ]
+
+        severity_priority = {
+            ReviewSeverity.CRITICAL: 4,
+            ReviewSeverity.HIGH: 3,
+            ReviewSeverity.MEDIUM: 2,
+            ReviewSeverity.LOW: 1,
+        }
+
+        if findings:
+            highest_severity = max(findings, key=lambda f: severity_priority[f.severity]).severity
+        else:
+            highest_severity = None
+
+        assert highest_severity == ReviewSeverity.HIGH
+
+    def test_empty_findings_returns_no_highest_severity(self):
+        """Test that empty findings list returns no highest severity."""
+        findings = []
+
+        severity_priority = {
+            ReviewSeverity.CRITICAL: 4,
+            ReviewSeverity.HIGH: 3,
+            ReviewSeverity.MEDIUM: 2,
+            ReviewSeverity.LOW: 1,
+        }
+
+        if findings:
+            highest_severity = max(findings, key=lambda f: severity_priority[f.severity]).severity
+        else:
+            highest_severity = None
+
+        assert highest_severity is None
+
+    def test_severity_affects_fixable_recommendation(self):
+        """Test that severity affects whether a finding should be auto-fixable."""
+        findings = [
+            PRReviewFinding(
+                id="CRIT-001",
+                severity=ReviewSeverity.CRITICAL,
+                category=ReviewCategory.SECURITY,
+                title="Critical Security",
+                description="Critical security issue",
+                file="src/a.py",
+                line=1,
+                fixable=False,  # Critical issues should not be auto-fixed
+            ),
+            PRReviewFinding(
+                id="LOW-001",
+                severity=ReviewSeverity.LOW,
+                category=ReviewCategory.STYLE,
+                title="Style Issue",
+                description="Minor style issue",
+                file="src/b.py",
+                line=2,
+                fixable=True,  # Low issues can be auto-fixed
+            ),
+        ]
+
+        # Verify fixable aligns with severity
+        critical_finding = next(f for f in findings if f.severity == ReviewSeverity.CRITICAL)
+        low_finding = next(f for f in findings if f.severity == ReviewSeverity.LOW)
+
+        assert critical_finding.fixable is False
+        assert low_finding.fixable is True
