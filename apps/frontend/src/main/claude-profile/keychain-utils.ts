@@ -33,8 +33,10 @@ interface KeychainCacheEntry {
 }
 
 const keychainCache = new Map<string, KeychainCacheEntry>();
-// Cache for 5 minutes (300,000 ms)
+// Cache for 5 minutes (300,000 ms) for successful results
 const CACHE_TTL_MS = 5 * 60 * 1000;
+// Cache for 10 seconds for error results (allows quick retry after keychain unlock)
+const ERROR_CACHE_TTL_MS = 10 * 1000;
 
 /**
  * Calculate the Keychain service name suffix for a config directory.
@@ -181,7 +183,7 @@ export function getCredentialsFromKeychain(configDir?: string, forceRefresh = fa
 
     const credentials = { token: token || null, email };
     keychainCache.set(serviceName, { credentials, timestamp: now });
-    console.warn('[KeychainUtils] Retrieved credentials from Keychain for service:', serviceName, { hasToken: !!token, email });
+    console.log('[KeychainUtils] Retrieved credentials from Keychain for service:', serviceName, { hasToken: !!token, hasEmail: !!email });
     return credentials;
   } catch (error) {
     // Check for exit code 44 (errSecItemNotFound) which indicates item not found
@@ -196,7 +198,8 @@ export function getCredentialsFromKeychain(configDir?: string, forceRefresh = fa
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.warn('[KeychainUtils] Keychain access failed for service:', serviceName, errorMessage);
     const errorResult = { token: null, email: null, error: `Keychain access failed: ${errorMessage}` };
-    keychainCache.set(serviceName, { credentials: errorResult, timestamp: now });
+    // Use shorter TTL for errors so users who unlock keychain see quick recovery
+    keychainCache.set(serviceName, { credentials: errorResult, timestamp: now - (CACHE_TTL_MS - ERROR_CACHE_TTL_MS) });
     return errorResult;
   }
 }

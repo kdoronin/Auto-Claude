@@ -10,6 +10,7 @@
 import { ipcMain } from 'electron';
 import { exec, execFileSync, spawn, execFile } from 'child_process';
 import { existsSync, readFileSync, promises as fsPromises } from 'fs';
+import { mkdir, rename, unlink } from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { promisify } from 'util';
@@ -1190,7 +1191,6 @@ export function registerClaudeCodeHandlers(): void {
           : configDir;
 
         // Create directory if it doesn't exist
-        const { mkdir, rename, unlink } = require('fs/promises');
         await mkdir(expandedConfigDir, { recursive: true });
 
         console.warn('[Claude Code] Config directory:', expandedConfigDir);
@@ -1284,12 +1284,10 @@ export function registerClaudeCodeHandlers(): void {
         // This handles cases where authentication was cancelled or failed
         if (!result.authenticated && existsSync(claudeJsonBakPath)) {
           try {
-            const { rename } = require('fs/promises');
             console.warn('[Claude Code] Authentication failed and backup exists, restoring .claude.json.bak');
 
             // Remove incomplete .claude.json if it exists
             if (existsSync(claudeJsonPath)) {
-              const { unlink } = require('fs/promises');
               await unlink(claudeJsonPath);
             }
 
@@ -1326,7 +1324,6 @@ export function registerClaudeCodeHandlers(): void {
           // Clean up backup file after successful authentication
           if (existsSync(claudeJsonBakPath)) {
             try {
-              const { unlink } = require('fs/promises');
               await unlink(claudeJsonBakPath);
               console.warn('[Claude Code] Cleaned up .claude.json.bak after successful auth');
             } catch (cleanupError) {

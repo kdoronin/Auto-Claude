@@ -776,61 +776,45 @@ expect {
 interact
 """
 
-    # Create a secure temporary directory with owner-only permissions (0o700)
+    # Use TemporaryDirectory context manager for automatic cleanup
     # This prevents information leakage about authentication activity
-    temp_dir = None
-    script_path = None
-
+    # Directory created with mode 0o700 (owner read/write/execute only)
     try:
-        # Create private temp directory (mode 0o700 = owner read/write/execute only)
-        temp_dir = tempfile.mkdtemp(prefix="claude_auth_")
-        os.chmod(temp_dir, 0o700)
+        with tempfile.TemporaryDirectory(prefix="claude_auth_") as temp_dir:
+            # Ensure directory has owner-only permissions
+            os.chmod(temp_dir, 0o700)
 
-        # Write expect script to temp file in our private directory
-        script_path = os.path.join(temp_dir, "login.exp")
-        with open(script_path, "w", encoding="utf-8") as f:
-            f.write(expect_script)
+            # Write expect script to temp file in our private directory
+            script_path = os.path.join(temp_dir, "login.exp")
+            with open(script_path, "w", encoding="utf-8") as f:
+                f.write(expect_script)
 
-        # Set script permissions to owner-only (0o700)
-        os.chmod(script_path, 0o700)
+            # Set script permissions to owner-only (0o700)
+            os.chmod(script_path, 0o700)
 
-        print("\n" + "=" * 60)
-        print("CLAUDE CODE LOGIN")
-        print("=" * 60)
-        print("\nOpening Claude Code for authentication...")
-        print("A browser window will open for OAuth login.")
-        print("After completing login in the browser, press Ctrl+C to exit.\n")
+            print("\n" + "=" * 60)
+            print("CLAUDE CODE LOGIN")
+            print("=" * 60)
+            print("\nOpening Claude Code for authentication...")
+            print("A browser window will open for OAuth login.")
+            print("After completing login in the browser, press Ctrl+C to exit.\n")
 
-        try:
             # Run expect script
             result = subprocess.run(
                 ["expect", script_path],
                 timeout=300,  # 5 minute timeout
             )
-        finally:
-            # Always clean up temp file and directory
-            if script_path and os.path.exists(script_path):
-                try:
-                    os.unlink(script_path)
-                except OSError:
-                    pass  # File already deleted or doesn't exist
 
-            if temp_dir and os.path.exists(temp_dir):
-                try:
-                    os.rmdir(temp_dir)
-                except OSError:
-                    pass  # Directory not empty or already deleted
-
-        # Verify token was saved
-        token = get_token_from_keychain()
-        if token:
-            print("\n✓ Login successful! Token saved to macOS Keychain.")
-            return True
-        else:
-            print(
-                "\n✗ Login may not have completed. Try running 'claude' and type '/login'"
-            )
-            return False
+            # Verify token was saved
+            token = get_token_from_keychain()
+            if token:
+                print("\n✓ Login successful! Token saved to macOS Keychain.")
+                return True
+            else:
+                print(
+                    "\n✗ Login may not have completed. Try running 'claude' and type '/login'"
+                )
+                return False
 
     except subprocess.TimeoutExpired:
         print("\nLogin timed out. Try running 'claude' manually and type '/login'")
@@ -846,19 +830,6 @@ interact
         print(f"\nLogin failed: {e}")
         print("Try running 'claude' manually and type '/login'")
         return False
-    finally:
-        # Final cleanup attempt in case of early exceptions
-        if script_path and os.path.exists(script_path):
-            try:
-                os.unlink(script_path)
-            except OSError:
-                pass
-
-        if temp_dir and os.path.exists(temp_dir):
-            try:
-                os.rmdir(temp_dir)
-            except OSError:
-                pass
 
 
 def _trigger_login_windows() -> bool:

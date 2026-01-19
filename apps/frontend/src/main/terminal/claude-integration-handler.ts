@@ -497,7 +497,7 @@ export function handleOAuthToken(
           } as OAuthTokenEvent);
         }
       } else {
-        console.warn('[ClaudeIntegration] Login successful but Keychain token not found yet, will retry on next output');
+        console.warn('[ClaudeIntegration] Login successful but Keychain token not found and no credentials in configDir - user may need to complete authentication manually');
       }
     }
     return;

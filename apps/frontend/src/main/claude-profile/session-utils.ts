@@ -9,6 +9,7 @@
 import { existsSync, mkdirSync, copyFileSync, cpSync, unlinkSync } from 'fs';
 import { join, dirname } from 'path';
 import { homedir } from 'os';
+import { isNodeError } from '../utils/type-guards';
 
 /**
  * Convert a working directory path to the Claude projects path format.
@@ -117,10 +118,10 @@ export function migrateSession(
       console.warn('[SessionUtils] Copied session file:', sourceFile, '->', targetFile);
     } catch (copyError) {
       // Check common error cases for better error messages
-      if (copyError instanceof Error) {
-        if (copyError.message.includes('ENOENT') && copyError.message.includes(sourceFile)) {
+      if (isNodeError(copyError)) {
+        if (copyError.code === 'ENOENT') {
           result.error = `Source session file not found: ${sourceFile}`;
-        } else if (copyError.message.includes('EEXIST') || copyError.message.includes('exists')) {
+        } else if (copyError.code === 'EEXIST') {
           // Target already exists - this is OK, treat as successful skip
           console.warn('[SessionUtils] Session already exists in target profile, skipping copy');
           result.success = true;
@@ -129,6 +130,8 @@ export function migrateSession(
         } else {
           result.error = `Failed to copy session file: ${copyError.message}`;
         }
+      } else if (copyError instanceof Error) {
+        result.error = `Failed to copy session file: ${copyError.message}`;
       } else {
         result.error = 'Unknown error copying session file';
       }
@@ -144,7 +147,7 @@ export function migrateSession(
       console.warn('[SessionUtils] Copied session directory:', sourceDir, '->', targetDir);
     } catch (dirCopyError) {
       // If source directory doesn't exist, that's fine - not all sessions have tool-results
-      if (dirCopyError instanceof Error && dirCopyError.message.includes('ENOENT')) {
+      if (isNodeError(dirCopyError) && dirCopyError.code === 'ENOENT') {
         console.warn('[SessionUtils] No session directory to copy (this is normal):', sourceDir);
       } else {
         // Other errors are real problems, but we already copied the main file
@@ -172,7 +175,7 @@ export function migrateSession(
       console.warn('[SessionUtils] Cleaned up partial migration file:', targetFile);
     } catch (cleanupError) {
       // If file doesn't exist during cleanup, that's fine
-      if (!(cleanupError instanceof Error && cleanupError.message.includes('ENOENT'))) {
+      if (!(isNodeError(cleanupError) && cleanupError.code === 'ENOENT')) {
         console.error('[SessionUtils] Failed to cleanup partial migration:',
           cleanupError instanceof Error ? cleanupError.message : 'Unknown cleanup error');
       }
