@@ -1658,6 +1658,292 @@ class TestQASignoffDataStructure:
 
 
 # =============================================================================
+# WORKTREE ISOLATION TESTS
+# =============================================================================
+
+class TestWorktreeIsolation:
+    """Tests for worktree isolation to verify concurrent agents don't conflict."""
+
+    def test_multiple_worktrees_have_separate_branches(self):
+        """Multiple worktrees for different specs have separate branches."""
+        from worktree import WorktreeManager
+
+        temp_dir, spec_dir, project_dir, saved_env = setup_test_environment()
+
+        try:
+            manager = WorktreeManager(project_dir)
+            manager.setup()
+
+            # Create two worktrees for different specs
+            info1 = manager.create_worktree("spec-agent-1")
+            info2 = manager.create_worktree("spec-agent-2")
+
+            # Each worktree should have a unique branch
+            assert info1.branch != info2.branch, "Worktrees should have different branches"
+            assert info1.branch == "auto-claude/spec-agent-1", f"Expected branch auto-claude/spec-agent-1, got {info1.branch}"
+            assert info2.branch == "auto-claude/spec-agent-2", f"Expected branch auto-claude/spec-agent-2, got {info2.branch}"
+
+            # Each worktree should have a unique path
+            assert info1.path != info2.path, "Worktrees should have different paths"
+            assert info1.path.exists(), "First worktree path should exist"
+            assert info2.path.exists(), "Second worktree path should exist"
+
+        finally:
+            cleanup_test_environment(temp_dir, saved_env)
+
+    def test_changes_in_one_worktree_dont_affect_another(self):
+        """Changes made in one worktree don't affect other worktrees."""
+        from worktree import WorktreeManager
+
+        temp_dir, spec_dir, project_dir, saved_env = setup_test_environment()
+
+        try:
+            manager = WorktreeManager(project_dir)
+            manager.setup()
+
+            # Create two worktrees
+            info1 = manager.create_worktree("spec-isolation-1")
+            info2 = manager.create_worktree("spec-isolation-2")
+
+            # Make changes in first worktree
+            file1 = info1.path / "agent1_work.txt"
+            file1.write_text("Work from agent 1")
+            subprocess.run(["git", "add", "."], cwd=info1.path, capture_output=True)
+            subprocess.run(
+                ["git", "commit", "-m", "Agent 1 work"],
+                cwd=info1.path, capture_output=True
+            )
+
+            # Make different changes in second worktree
+            file2 = info2.path / "agent2_work.txt"
+            file2.write_text("Work from agent 2")
+            subprocess.run(["git", "add", "."], cwd=info2.path, capture_output=True)
+            subprocess.run(
+                ["git", "commit", "-m", "Agent 2 work"],
+                cwd=info2.path, capture_output=True
+            )
+
+            # Verify changes are isolated
+            assert (info1.path / "agent1_work.txt").exists(), "Agent 1 file should exist in worktree 1"
+            assert not (info1.path / "agent2_work.txt").exists(), "Agent 2 file should NOT exist in worktree 1"
+            assert (info2.path / "agent2_work.txt").exists(), "Agent 2 file should exist in worktree 2"
+            assert not (info2.path / "agent1_work.txt").exists(), "Agent 1 file should NOT exist in worktree 2"
+
+            # Verify main branch is unaffected
+            assert not (project_dir / "agent1_work.txt").exists(), "Agent 1 file should NOT exist in main"
+            assert not (project_dir / "agent2_work.txt").exists(), "Agent 2 file should NOT exist in main"
+
+        finally:
+            cleanup_test_environment(temp_dir, saved_env)
+
+    def test_concurrent_worktree_operations_dont_conflict(self):
+        """Concurrent operations on different worktrees don't cause conflicts."""
+        from worktree import WorktreeManager
+
+        temp_dir, spec_dir, project_dir, saved_env = setup_test_environment()
+
+        try:
+            manager = WorktreeManager(project_dir)
+            manager.setup()
+
+            # Create multiple worktrees simulating concurrent agents
+            worktrees = []
+            for i in range(3):
+                info = manager.create_worktree(f"concurrent-spec-{i}")
+                worktrees.append(info)
+
+            # Simulate concurrent work - each "agent" modifies the same file in their worktree
+            for i, info in enumerate(worktrees):
+                # Each worktree starts with the same file (from base branch)
+                modified_file = info.path / "test.txt"
+                modified_file.write_text(f"Modified by agent {i}")
+                subprocess.run(["git", "add", "."], cwd=info.path, capture_output=True)
+                subprocess.run(
+                    ["git", "commit", "-m", f"Agent {i} modification"],
+                    cwd=info.path, capture_output=True
+                )
+
+            # Verify each worktree has its own version
+            for i, info in enumerate(worktrees):
+                content = (info.path / "test.txt").read_text()
+                assert content == f"Modified by agent {i}", f"Worktree {i} should have agent {i}'s changes"
+
+            # Verify all worktrees still exist and are valid
+            all_worktrees = manager.list_all_worktrees()
+            assert len(all_worktrees) == 3, f"Should have 3 worktrees, got {len(all_worktrees)}"
+
+        finally:
+            cleanup_test_environment(temp_dir, saved_env)
+
+    def test_worktree_isolation_with_spec_directories(self):
+        """Worktrees properly isolate spec-related directories."""
+        from worktree import WorktreeManager
+
+        temp_dir, spec_dir, project_dir, saved_env = setup_test_environment()
+
+        try:
+            manager = WorktreeManager(project_dir)
+            manager.setup()
+
+            # Create worktree
+            info = manager.create_worktree("spec-dir-test")
+
+            # Create a spec directory structure in the worktree
+            worktree_spec_dir = info.path / ".auto-claude" / "specs" / "spec-dir-test"
+            worktree_spec_dir.mkdir(parents=True)
+
+            # Create implementation plan in the worktree's spec directory
+            plan = {
+                "feature": "Test Feature",
+                "phases": [
+                    {
+                        "id": "phase-1",
+                        "name": "Test",
+                        "subtasks": [
+                            {"id": "subtask-1", "description": "Test", "status": "pending"}
+                        ]
+                    }
+                ]
+            }
+            plan_file = worktree_spec_dir / "implementation_plan.json"
+            plan_file.write_text(json.dumps(plan, indent=2))
+
+            # Verify the spec directory exists only in the worktree
+            assert worktree_spec_dir.exists(), "Spec dir should exist in worktree"
+
+            # Main project directory should not have this spec directory
+            # (the .auto-claude/specs path may exist but not this specific spec)
+            main_spec_dir = project_dir / ".auto-claude" / "specs" / "spec-dir-test"
+            assert not main_spec_dir.exists(), "Worktree spec dir should NOT exist in main project"
+
+        finally:
+            cleanup_test_environment(temp_dir, saved_env)
+
+    def test_worktree_can_be_removed_without_affecting_others(self):
+        """Removing one worktree doesn't affect other worktrees."""
+        from worktree import WorktreeManager
+
+        temp_dir, spec_dir, project_dir, saved_env = setup_test_environment()
+
+        try:
+            manager = WorktreeManager(project_dir)
+            manager.setup()
+
+            # Create three worktrees
+            info1 = manager.create_worktree("removal-test-1")
+            info2 = manager.create_worktree("removal-test-2")
+            info3 = manager.create_worktree("removal-test-3")
+
+            # Make some changes in each
+            for info in [info1, info2, info3]:
+                (info.path / f"{info.spec_name}.txt").write_text(f"Data for {info.spec_name}")
+                subprocess.run(["git", "add", "."], cwd=info.path, capture_output=True)
+                subprocess.run(
+                    ["git", "commit", "-m", f"Commit for {info.spec_name}"],
+                    cwd=info.path, capture_output=True
+                )
+
+            # Remove the middle worktree
+            manager.remove_worktree("removal-test-2", delete_branch=True)
+
+            # Verify the removed worktree is gone
+            assert not info2.path.exists(), "Removed worktree path should not exist"
+
+            # Verify other worktrees still exist and are intact
+            assert info1.path.exists(), "First worktree should still exist"
+            assert info3.path.exists(), "Third worktree should still exist"
+
+            # Verify other worktrees still have their data
+            assert (info1.path / "removal-test-1.txt").exists(), "First worktree data should be intact"
+            assert (info3.path / "removal-test-3.txt").exists(), "Third worktree data should be intact"
+
+            # Verify the listing is correct
+            remaining = manager.list_all_worktrees()
+            assert len(remaining) == 2, f"Should have 2 remaining worktrees, got {len(remaining)}"
+
+        finally:
+            cleanup_test_environment(temp_dir, saved_env)
+
+    def test_worktree_merge_isolation(self):
+        """Merging one worktree doesn't affect other worktrees."""
+        from worktree import WorktreeManager
+
+        temp_dir, spec_dir, project_dir, saved_env = setup_test_environment()
+
+        try:
+            manager = WorktreeManager(project_dir)
+            manager.setup()
+
+            # Create two worktrees
+            info1 = manager.create_worktree("merge-test-1")
+            info2 = manager.create_worktree("merge-test-2")
+
+            # Make changes in first worktree
+            (info1.path / "feature1.txt").write_text("Feature 1 implementation")
+            subprocess.run(["git", "add", "."], cwd=info1.path, capture_output=True)
+            subprocess.run(
+                ["git", "commit", "-m", "Add feature 1"],
+                cwd=info1.path, capture_output=True
+            )
+
+            # Make changes in second worktree
+            (info2.path / "feature2.txt").write_text("Feature 2 implementation")
+            subprocess.run(["git", "add", "."], cwd=info2.path, capture_output=True)
+            subprocess.run(
+                ["git", "commit", "-m", "Add feature 2"],
+                cwd=info2.path, capture_output=True
+            )
+
+            # Merge first worktree
+            result = manager.merge_worktree("merge-test-1", delete_after=False)
+            assert result is True, "Merge should succeed"
+
+            # Verify feature 1 is in main
+            assert (project_dir / "feature1.txt").exists(), "Feature 1 should be merged to main"
+
+            # Verify feature 2 is NOT in main yet
+            assert not (project_dir / "feature2.txt").exists(), "Feature 2 should NOT be in main yet"
+
+            # Verify second worktree is unaffected
+            assert info2.path.exists(), "Second worktree should still exist"
+            assert (info2.path / "feature2.txt").exists(), "Second worktree should still have feature 2"
+
+        finally:
+            cleanup_test_environment(temp_dir, saved_env)
+
+    def test_get_or_create_worktree_returns_existing(self):
+        """get_or_create_worktree returns existing worktree instead of creating new."""
+        from worktree import WorktreeManager
+
+        temp_dir, spec_dir, project_dir, saved_env = setup_test_environment()
+
+        try:
+            manager = WorktreeManager(project_dir)
+            manager.setup()
+
+            # Create a worktree and add some data
+            info1 = manager.create_worktree("existing-test")
+            marker_file = info1.path / "marker.txt"
+            marker_file.write_text("This is a marker")
+            subprocess.run(["git", "add", "."], cwd=info1.path, capture_output=True)
+            subprocess.run(
+                ["git", "commit", "-m", "Add marker"],
+                cwd=info1.path, capture_output=True
+            )
+
+            # get_or_create should return the existing worktree
+            info2 = manager.get_or_create_worktree("existing-test")
+
+            # Should be the same worktree with the marker file
+            assert info2.path == info1.path, "Should return same worktree path"
+            assert info2.branch == info1.branch, "Should return same branch"
+            assert marker_file.exists(), "Marker file should still exist"
+
+        finally:
+            cleanup_test_environment(temp_dir, saved_env)
+
+
+# =============================================================================
 # MAIN ENTRY POINT
 # =============================================================================
 
