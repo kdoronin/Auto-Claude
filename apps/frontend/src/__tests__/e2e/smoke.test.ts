@@ -499,6 +499,334 @@ describe('E2E Smoke Tests', () => {
         ])
       });
     });
+
+    it('should handle task creation with implementation plan loading', async () => {
+      await import('../../preload/index');
+      const electronAPI = exposedApis['electronAPI'] as Record<string, unknown>;
+
+      // Create task that includes implementation plan with subtasks
+      const taskWithPlan = createTestTask({
+        status: 'spec_complete',
+        plan: {
+          feature: 'User Authentication',
+          workflow_type: 'feature',
+          services_involved: ['backend', 'frontend'],
+          phases: [
+            {
+              id: 'phase-1',
+              name: 'Implementation Phase',
+              type: 'implementation',
+              subtasks: [
+                {
+                  id: 'subtask-1-1',
+                  description: 'Create login endpoint',
+                  status: 'pending',
+                  files_to_modify: ['auth.py'],
+                  service: 'backend'
+                },
+                {
+                  id: 'subtask-1-2',
+                  description: 'Add login form component',
+                  status: 'pending',
+                  files_to_modify: ['LoginForm.tsx'],
+                  service: 'frontend'
+                }
+              ]
+            }
+          ],
+          status: 'in_progress',
+          planStatus: 'in_progress'
+        }
+      });
+
+      mockIpcRenderer.invoke.mockResolvedValueOnce({
+        success: true,
+        data: taskWithPlan
+      });
+
+      const createTask = electronAPI['createTask'] as (
+        projectId: string,
+        title: string,
+        description: string
+      ) => Promise<unknown>;
+      const result = await createTask(
+        'project-001',
+        'Implement user authentication',
+        'Add login and registration functionality'
+      );
+
+      expect(result).toMatchObject({
+        success: true,
+        data: expect.objectContaining({
+          status: 'spec_complete',
+          plan: expect.objectContaining({
+            phases: expect.arrayContaining([
+              expect.objectContaining({
+                subtasks: expect.arrayContaining([
+                  expect.objectContaining({
+                    id: 'subtask-1-1',
+                    description: 'Create login endpoint',
+                    status: 'pending'
+                  }),
+                  expect.objectContaining({
+                    id: 'subtask-1-2',
+                    description: 'Add login form component',
+                    status: 'pending'
+                  })
+                ])
+              })
+            ])
+          })
+        })
+      });
+    });
+
+    it('should track task lifecycle status progression', async () => {
+      await import('../../preload/index');
+      const electronAPI = exposedApis['electronAPI'] as Record<string, unknown>;
+
+      // Register status change listener
+      const statusCallback = vi.fn();
+      const onTaskStatusChange = electronAPI['onTaskStatusChange'] as (cb: Function) => Function;
+      const cleanupStatus = onTaskStatusChange(statusCallback);
+
+      const statusHandler = mockIpcRenderer.on.mock.calls.find(
+        (call) => call[0] === 'task:statusChange'
+      )?.[1];
+
+      // Simulate full task lifecycle progression
+      const statusProgression = [
+        'pending',
+        'spec_creation',
+        'planning',
+        'spec_complete',
+        'building',
+        'qa_review',
+        'completed'
+      ];
+
+      if (statusHandler) {
+        for (const status of statusProgression) {
+          statusHandler({}, 'task-001', status);
+        }
+      }
+
+      // Verify all status changes were tracked
+      expect(statusCallback).toHaveBeenCalledTimes(statusProgression.length);
+      statusProgression.forEach((status, index) => {
+        expect(statusCallback).toHaveBeenNthCalledWith(
+          index + 1,
+          'task-001',
+          status,
+          undefined
+        );
+      });
+
+      cleanupStatus();
+    });
+
+    it('should handle task form validation with missing required fields', async () => {
+      await import('../../preload/index');
+      const electronAPI = exposedApis['electronAPI'] as Record<string, unknown>;
+
+      // Attempt to create task with empty title
+      mockIpcRenderer.invoke.mockResolvedValueOnce({
+        success: false,
+        error: 'Title is required'
+      });
+
+      const createTask = electronAPI['createTask'] as (
+        projectId: string,
+        title: string,
+        description: string
+      ) => Promise<unknown>;
+      const result = await createTask('project-001', '', 'Some description');
+
+      expect(result).toMatchObject({
+        success: false,
+        error: 'Title is required'
+      });
+    });
+
+    it('should handle task completion with subtask progress tracking', async () => {
+      await import('../../preload/index');
+      const electronAPI = exposedApis['electronAPI'] as Record<string, unknown>;
+
+      // Register progress listener
+      const progressCallback = vi.fn();
+      const onTaskProgress = electronAPI['onTaskProgress'] as (cb: Function) => Function;
+      const cleanupProgress = onTaskProgress(progressCallback);
+
+      const progressHandler = mockIpcRenderer.on.mock.calls.find(
+        (call) => call[0] === 'task:progress'
+      )?.[1];
+
+      if (progressHandler) {
+        // Simulate subtask completion progress
+        progressHandler({}, 'task-001', {
+          phase: 'building',
+          currentSubtask: {
+            id: 'subtask-1-1',
+            description: 'Create login endpoint',
+            status: 'in_progress'
+          },
+          completedSubtasks: 0,
+          totalSubtasks: 3,
+          progress: 33
+        });
+
+        progressHandler({}, 'task-001', {
+          phase: 'building',
+          currentSubtask: {
+            id: 'subtask-1-2',
+            description: 'Add login form',
+            status: 'in_progress'
+          },
+          completedSubtasks: 1,
+          totalSubtasks: 3,
+          progress: 66
+        });
+
+        progressHandler({}, 'task-001', {
+          phase: 'building',
+          currentSubtask: null,
+          completedSubtasks: 3,
+          totalSubtasks: 3,
+          progress: 100
+        });
+      }
+
+      expect(progressCallback).toHaveBeenCalledTimes(3);
+      expect(progressCallback).toHaveBeenLastCalledWith(
+        'task-001',
+        expect.objectContaining({
+          phase: 'building',
+          completedSubtasks: 3,
+          totalSubtasks: 3,
+          progress: 100
+        }),
+        undefined
+      );
+
+      cleanupProgress();
+    });
+
+    it('should handle task update with partial data', async () => {
+      await import('../../preload/index');
+      const electronAPI = exposedApis['electronAPI'] as Record<string, unknown>;
+
+      // Update task with only title change
+      const updatedTask = createTestTask({ title: 'Updated Task Title' });
+      mockIpcRenderer.invoke.mockResolvedValueOnce({
+        success: true,
+        data: updatedTask
+      });
+
+      const updateTask = electronAPI['updateTask'] as (
+        id: string,
+        updates: object
+      ) => Promise<unknown>;
+      const result = await updateTask('task-001', { title: 'Updated Task Title' });
+
+      expect(mockIpcRenderer.invoke).toHaveBeenCalledWith('task:update', 'task-001', {
+        title: 'Updated Task Title'
+      });
+      expect(result).toMatchObject({
+        success: true,
+        data: expect.objectContaining({
+          title: 'Updated Task Title'
+        })
+      });
+    });
+
+    it('should handle subtask status update during build', async () => {
+      await import('../../preload/index');
+      const electronAPI = exposedApis['electronAPI'] as Record<string, unknown>;
+
+      // Register progress listener for subtask updates
+      const progressCallback = vi.fn();
+      const onTaskProgress = electronAPI['onTaskProgress'] as (cb: Function) => Function;
+      const cleanupProgress = onTaskProgress(progressCallback);
+
+      const progressHandler = mockIpcRenderer.on.mock.calls.find(
+        (call) => call[0] === 'task:progress'
+      )?.[1];
+
+      if (progressHandler) {
+        // Simulate subtask status transitions
+        progressHandler({}, 'task-001', {
+          subtaskUpdate: {
+            id: 'subtask-1-1',
+            previousStatus: 'pending',
+            newStatus: 'in_progress'
+          }
+        });
+
+        progressHandler({}, 'task-001', {
+          subtaskUpdate: {
+            id: 'subtask-1-1',
+            previousStatus: 'in_progress',
+            newStatus: 'completed'
+          }
+        });
+      }
+
+      expect(progressCallback).toHaveBeenCalledTimes(2);
+      expect(progressCallback).toHaveBeenNthCalledWith(
+        1,
+        'task-001',
+        expect.objectContaining({
+          subtaskUpdate: expect.objectContaining({
+            id: 'subtask-1-1',
+            newStatus: 'in_progress'
+          })
+        }),
+        undefined
+      );
+      expect(progressCallback).toHaveBeenNthCalledWith(
+        2,
+        'task-001',
+        expect.objectContaining({
+          subtaskUpdate: expect.objectContaining({
+            id: 'subtask-1-1',
+            newStatus: 'completed'
+          })
+        }),
+        undefined
+      );
+
+      cleanupProgress();
+    });
+
+    it('should handle task deletion flow', async () => {
+      await import('../../preload/index');
+      const electronAPI = exposedApis['electronAPI'] as Record<string, unknown>;
+
+      // Delete task
+      mockIpcRenderer.invoke.mockResolvedValueOnce({
+        success: true
+      });
+
+      const deleteTask = electronAPI['deleteTask'] as (id: string) => Promise<unknown>;
+      const deleteResult = await deleteTask('task-001');
+
+      expect(mockIpcRenderer.invoke).toHaveBeenCalledWith('task:delete', 'task-001');
+      expect(deleteResult).toMatchObject({ success: true });
+
+      // Verify task no longer in list
+      mockIpcRenderer.invoke.mockResolvedValueOnce({
+        success: true,
+        data: []
+      });
+
+      const getTasks = electronAPI['getTasks'] as (projectId: string) => Promise<unknown>;
+      const listResult = await getTasks('project-001');
+
+      expect(listResult).toMatchObject({
+        success: true,
+        data: []
+      });
+    });
   });
 
   describe('Settings Management Flow', () => {
