@@ -16,6 +16,7 @@ Responsibilities:
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import json
 import re
@@ -975,6 +976,97 @@ class PRContextGatherer:
             return {str(type_def)}
 
         return set()
+
+    def _resolve_python_import(
+        self, module_name: str, level: int, source_path: Path
+    ) -> str | None:
+        """
+        Resolve a Python import to an actual file path.
+
+        Args:
+            module_name: Module name like 'utils' or 'utils.helpers'
+            level: Import level (0=absolute, 1=from ., 2=from .., etc.)
+            source_path: Path of file doing the importing
+
+        Returns:
+            Resolved path relative to project root, or None if not found.
+        """
+        if level > 0:
+            # Relative import: from . or from ..
+            base_dir = source_path.parent
+            # level=1 means same package (.), level=2 means parent (..), etc.
+            for _ in range(level - 1):
+                base_dir = base_dir.parent
+
+            if module_name:
+                # from .module import x -> look for module.py or module/__init__.py
+                parts = module_name.split(".")
+                candidate = base_dir / Path(*parts)
+            else:
+                # from . import x -> can't resolve without knowing what x is
+                return None
+        else:
+            # Absolute import - check if it's project-internal
+            parts = module_name.split(".")
+            candidate = Path(*parts)
+
+        # Try as module file (e.g., utils.py)
+        file_path = self.project_dir / candidate.with_suffix(".py")
+        if file_path.exists() and file_path.is_file():
+            try:
+                return str(file_path.relative_to(self.project_dir))
+            except ValueError:
+                return None
+
+        # Try as package directory (e.g., utils/__init__.py)
+        init_path = self.project_dir / candidate / "__init__.py"
+        if init_path.exists() and init_path.is_file():
+            try:
+                return str(init_path.relative_to(self.project_dir))
+            except ValueError:
+                return None
+
+        return None
+
+    def _find_python_imports(self, content: str, source_path: Path) -> set[str]:
+        """
+        Find imported files from Python source code using AST.
+
+        Uses ast.parse to extract Import and ImportFrom nodes, then resolves
+        them to actual file paths within the project.
+
+        Args:
+            content: Python source code
+            source_path: Path of the file being analyzed
+
+        Returns:
+            Set of resolved file paths relative to project root.
+        """
+        imports: set[str] = set()
+
+        try:
+            tree = ast.parse(content)
+        except SyntaxError:
+            # Invalid Python syntax - skip gracefully
+            return imports
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                # import module, import module.submodule
+                for alias in node.names:
+                    resolved = self._resolve_python_import(alias.name, 0, source_path)
+                    if resolved:
+                        imports.add(resolved)
+
+            elif isinstance(node, ast.ImportFrom):
+                # from module import x, from . import x, from ..module import x
+                module = node.module or ""
+                level = node.level  # 0=absolute, 1=from ., 2=from .., etc.
+                resolved = self._resolve_python_import(module, level, source_path)
+                if resolved:
+                    imports.add(resolved)
+
+        return imports
 
     @staticmethod
     def find_related_files_for_root(
