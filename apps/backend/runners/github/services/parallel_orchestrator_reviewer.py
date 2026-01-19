@@ -74,6 +74,63 @@ DEBUG_MODE = os.environ.get("DEBUG", "").lower() in ("true", "1", "yes")
 PR_WORKTREE_DIR = ".auto-claude/github/pr/worktrees"
 
 
+def _validate_finding_evidence(finding: PRReviewFinding) -> tuple[bool, str]:
+    """
+    Check if finding has actual code evidence, not just descriptions.
+
+    Returns:
+        Tuple of (is_valid, reason)
+    """
+    if not finding.evidence:
+        return False, "No evidence provided"
+
+    evidence = finding.evidence.strip()
+    if len(evidence) < 10:
+        return False, "Evidence too short (< 10 chars)"
+
+    # Reject generic descriptions that aren't code
+    description_patterns = [
+        "the code",
+        "this function",
+        "it appears",
+        "seems to",
+        "may be",
+        "could be",
+        "might be",
+        "appears to",
+        "there is",
+        "there are",
+    ]
+    evidence_lower = evidence.lower()
+    for pattern in description_patterns:
+        if evidence_lower.startswith(pattern):
+            return False, f"Evidence starts with description pattern: '{pattern}'"
+
+    # Evidence should look like code (has syntax characters)
+    code_chars = [
+        "=",
+        "(",
+        ")",
+        "{",
+        "}",
+        ";",
+        ":",
+        ".",
+        "->",
+        "::",
+        "[",
+        "]",
+        "'",
+        '"',
+    ]
+    has_code_syntax = any(char in evidence for char in code_chars)
+
+    if not has_code_syntax:
+        return False, "Evidence lacks code syntax characters"
+
+    return True, "Valid evidence"
+
+
 class ParallelOrchestratorReviewer:
     """
     PR reviewer using SDK subagents for parallel specialist analysis.
