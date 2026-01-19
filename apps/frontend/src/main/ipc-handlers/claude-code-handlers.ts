@@ -1203,18 +1203,14 @@ export function registerClaudeCodeHandlers(): void {
         const claudeJsonPath = path.join(expandedConfigDir, '.claude.json');
         const claudeJsonBakPath = path.join(expandedConfigDir, '.claude.json.bak');
 
-        // NEW-005 FIX: Clean up stale backup files from interrupted authentication
-        // If both .claude.json.bak AND .claude.json exist, the previous auth completed
-        // successfully, so the backup is stale and should be removed
-        if (existsSync(claudeJsonBakPath) && existsSync(claudeJsonPath)) {
-          try {
-            await unlink(claudeJsonBakPath);
-            console.warn('[Claude Code] Cleaned up stale .claude.json.bak from previous authentication');
-          } catch (cleanupError) {
-            console.warn('[Claude Code] Failed to clean up stale backup:', cleanupError);
-            // Non-fatal: continue with authentication
-          }
-        }
+        // NOTE: We intentionally do NOT clean up .claude.json.bak here.
+        // If both files exist, we cannot assume the previous auth succeeded - the app
+        // may have crashed after /login wrote an incomplete .claude.json but before
+        // VERIFY_AUTH ran. The backup may contain valid credentials needed for rollback.
+        //
+        // Backup cleanup happens safely in two places:
+        // 1. VERIFY_AUTH handler (lines ~1339-1347): After confirming valid credentials
+        // 2. Below (lines ~1229-1231): When creating a new backup (removes old backup first)
 
         if (existsSync(claudeJsonPath)) {
           try {
