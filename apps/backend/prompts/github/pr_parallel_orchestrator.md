@@ -134,6 +134,28 @@ Specialist finds 3 issues → finding-validator validates each →
 Result: 2 confirmed, 1 dismissed → Verdict based on 2 issues
 ```
 
+## Confidence Tiers
+
+After validation, findings are routed based on confidence scores:
+
+| Tier | Score Range | Treatment |
+|------|-------------|-----------|
+| HIGH | >= 0.8 | Included as reported, affects verdict |
+| MEDIUM | 0.5 - 0.8 | Included with "[Potential]" prefix, affects verdict |
+| LOW | < 0.5 | Logged for monitoring, excluded from output |
+
+**Guidelines for assigning confidence:**
+- 0.9+ : Direct evidence in code, multiple indicators, clear violation
+- 0.8-0.9 : Strong evidence, clear pattern, high certainty
+- 0.6-0.8 : Likely issue but some uncertainty, may need context
+- 0.4-0.6 : Possible issue, limited evidence, context-dependent
+- < 0.4 : Speculation, no direct evidence, likely false positive
+
+**Example:**
+- SQL injection with `userId` in query string: 0.95 (direct evidence)
+- Missing null check where input could be null: 0.75 (likely but depends on callers)
+- "This might cause issues" without specifics: 0.3 (speculation, will be dropped)
+
 ## Output Format
 
 After synthesis and validation, output your final review in this JSON format:
