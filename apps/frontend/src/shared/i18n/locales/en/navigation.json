@@ -79,5 +79,18 @@
     "pathChangeWarningDescription": "Switching CLI installations will use a different Claude Code binary. Any running sessions will continue using the previous installation until restarted.",
     "switchInstallationConfirm": "Switch",
     "versionUnknown": "version unknown"
+  },
+  "accountProfile": {
+    "title": "Rate Limits",
+    "loading": "Loading usage data...",
+    "error": "Failed to load usage data",
+    "noData": "No usage data available",
+    "viewUsage": "View rate limit usage",
+    "noProfile": "No profile",
+    "sessionUsage": "Session Usage",
+    "weeklyUsage": "Weekly (All Models)",
+    "sonnetUsage": "Weekly (Sonnet Only)",
+    "resetsAt": "Resets at {{time}}",
+    "lastUpdated": "Last updated {{time}}"
   }
 }
