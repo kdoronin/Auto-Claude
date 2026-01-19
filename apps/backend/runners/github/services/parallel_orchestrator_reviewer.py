@@ -188,6 +188,7 @@ class ParallelOrchestratorReviewer:
         logic_prompt = self._load_prompt("pr_logic_agent.md")
         codebase_fit_prompt = self._load_prompt("pr_codebase_fit_agent.md")
         ai_triage_prompt = self._load_prompt("pr_ai_triage.md")
+        validator_prompt = self._load_prompt("pr_finding_validator.md")
 
         return {
             "security-reviewer": AgentDefinition(
@@ -243,6 +244,19 @@ class ParallelOrchestratorReviewer:
                 ),
                 prompt=ai_triage_prompt
                 or "You are an AI triage expert. Validate AI comments.",
+                tools=["Read", "Grep", "Glob"],
+                model="inherit",
+            ),
+            "finding-validator": AgentDefinition(
+                description=(
+                    "Finding validation specialist. Re-investigates findings to validate "
+                    "they are actually real issues, not false positives. "
+                    "Reads the ACTUAL CODE at the finding location with fresh eyes. "
+                    "CRITICAL: Invoke for ALL findings after specialist agents complete. "
+                    "Can confirm findings as valid OR dismiss them as false positives."
+                ),
+                prompt=validator_prompt
+                or "You validate whether findings are real issues.",
                 tools=["Read", "Grep", "Glob"],
                 model="inherit",
             ),
