@@ -682,6 +682,416 @@ class TestPlannerOutputValidation:
 
 
 # =============================================================================
+# SUBTASK COMPLETION DETECTION TESTS
+# =============================================================================
+
+class TestSubtaskCompletionDetection:
+    """Tests for subtask completion detection and status counting."""
+
+    def test_count_subtasks_basic(self):
+        """Test basic subtask counting."""
+        from progress import count_subtasks
+
+        temp_dir, spec_dir, project_dir, saved_env = setup_test_environment()
+
+        try:
+            create_implementation_plan(spec_dir, [
+                {"id": "subtask-1", "description": "Task 1", "status": "completed"},
+                {"id": "subtask-2", "description": "Task 2", "status": "pending"},
+                {"id": "subtask-3", "description": "Task 3", "status": "pending"}
+            ])
+
+            completed, total = count_subtasks(spec_dir)
+
+            assert total == 3, "Should have 3 total subtasks"
+            assert completed == 1, "Should have 1 completed subtask"
+
+        finally:
+            cleanup_test_environment(temp_dir, saved_env)
+
+    def test_count_subtasks_empty_plan(self):
+        """Test counting with empty plan returns zeros."""
+        from progress import count_subtasks
+
+        temp_dir, spec_dir, project_dir, saved_env = setup_test_environment()
+
+        try:
+            # No plan file exists
+            completed, total = count_subtasks(spec_dir)
+            assert completed == 0, "Empty plan should have 0 completed"
+            assert total == 0, "Empty plan should have 0 total"
+
+        finally:
+            cleanup_test_environment(temp_dir, saved_env)
+
+    def test_count_subtasks_detailed_all_statuses(self):
+        """Test detailed counting with all status types."""
+        from progress import count_subtasks_detailed
+
+        temp_dir, spec_dir, project_dir, saved_env = setup_test_environment()
+
+        try:
+            create_implementation_plan(spec_dir, [
+                {"id": "subtask-1", "description": "Task 1", "status": "completed"},
+                {"id": "subtask-2", "description": "Task 2", "status": "in_progress"},
+                {"id": "subtask-3", "description": "Task 3", "status": "pending"},
+                {"id": "subtask-4", "description": "Task 4", "status": "failed"}
+            ])
+
+            counts = count_subtasks_detailed(spec_dir)
+
+            assert counts["total"] == 4, "Should have 4 total subtasks"
+            assert counts["completed"] == 1, "Should have 1 completed"
+            assert counts["in_progress"] == 1, "Should have 1 in_progress"
+            assert counts["pending"] == 1, "Should have 1 pending"
+            assert counts["failed"] == 1, "Should have 1 failed"
+
+        finally:
+            cleanup_test_environment(temp_dir, saved_env)
+
+    def test_count_subtasks_detailed_unknown_status_treated_as_pending(self):
+        """Test that unknown status values are treated as pending."""
+        from progress import count_subtasks_detailed
+
+        temp_dir, spec_dir, project_dir, saved_env = setup_test_environment()
+
+        try:
+            create_implementation_plan(spec_dir, [
+                {"id": "subtask-1", "description": "Task 1", "status": "unknown_status"},
+                {"id": "subtask-2", "description": "Task 2", "status": "completed"}
+            ])
+
+            counts = count_subtasks_detailed(spec_dir)
+
+            assert counts["total"] == 2, "Should have 2 total subtasks"
+            assert counts["completed"] == 1, "Should have 1 completed"
+            assert counts["pending"] == 1, "Unknown status should count as pending"
+
+        finally:
+            cleanup_test_environment(temp_dir, saved_env)
+
+    def test_is_build_complete_true_when_all_done(self):
+        """Test is_build_complete returns True when all subtasks completed."""
+        from progress import is_build_complete
+
+        temp_dir, spec_dir, project_dir, saved_env = setup_test_environment()
+
+        try:
+            create_implementation_plan(spec_dir, [
+                {"id": "subtask-1", "description": "Task 1", "status": "completed"},
+                {"id": "subtask-2", "description": "Task 2", "status": "completed"}
+            ])
+
+            assert is_build_complete(spec_dir) is True, "Build should be complete"
+
+        finally:
+            cleanup_test_environment(temp_dir, saved_env)
+
+    def test_is_build_complete_false_with_in_progress(self):
+        """Test is_build_complete returns False with in_progress subtask."""
+        from progress import is_build_complete
+
+        temp_dir, spec_dir, project_dir, saved_env = setup_test_environment()
+
+        try:
+            create_implementation_plan(spec_dir, [
+                {"id": "subtask-1", "description": "Task 1", "status": "completed"},
+                {"id": "subtask-2", "description": "Task 2", "status": "in_progress"}
+            ])
+
+            assert is_build_complete(spec_dir) is False, "Build should not be complete with in_progress"
+
+        finally:
+            cleanup_test_environment(temp_dir, saved_env)
+
+    def test_is_build_complete_false_with_failed(self):
+        """Test is_build_complete returns False with failed subtask."""
+        from progress import is_build_complete
+
+        temp_dir, spec_dir, project_dir, saved_env = setup_test_environment()
+
+        try:
+            create_implementation_plan(spec_dir, [
+                {"id": "subtask-1", "description": "Task 1", "status": "completed"},
+                {"id": "subtask-2", "description": "Task 2", "status": "failed"}
+            ])
+
+            assert is_build_complete(spec_dir) is False, "Build should not be complete with failed task"
+
+        finally:
+            cleanup_test_environment(temp_dir, saved_env)
+
+    def test_is_build_complete_false_with_empty_plan(self):
+        """Test is_build_complete returns False for empty plan."""
+        from progress import is_build_complete
+
+        temp_dir, spec_dir, project_dir, saved_env = setup_test_environment()
+
+        try:
+            # No plan file
+            assert is_build_complete(spec_dir) is False, "Empty plan should not be complete"
+
+            # Empty phases
+            plan = {
+                "feature": "Test Feature",
+                "workflow_type": "feature",
+                "status": "in_progress",
+                "phases": []
+            }
+            (spec_dir / "implementation_plan.json").write_text(json.dumps(plan))
+
+            assert is_build_complete(spec_dir) is False, "Plan with no subtasks should not be complete"
+
+        finally:
+            cleanup_test_environment(temp_dir, saved_env)
+
+    def test_get_progress_percentage(self):
+        """Test progress percentage calculation."""
+        from progress import get_progress_percentage
+
+        temp_dir, spec_dir, project_dir, saved_env = setup_test_environment()
+
+        try:
+            # 50% complete
+            create_implementation_plan(spec_dir, [
+                {"id": "subtask-1", "description": "Task 1", "status": "completed"},
+                {"id": "subtask-2", "description": "Task 2", "status": "pending"}
+            ])
+
+            percentage = get_progress_percentage(spec_dir)
+            assert percentage == 50.0, "Should be 50% complete"
+
+        finally:
+            cleanup_test_environment(temp_dir, saved_env)
+
+    def test_get_progress_percentage_empty_plan(self):
+        """Test progress percentage for empty plan is 0."""
+        from progress import get_progress_percentage
+
+        temp_dir, spec_dir, project_dir, saved_env = setup_test_environment()
+
+        try:
+            # No plan file
+            percentage = get_progress_percentage(spec_dir)
+            assert percentage == 0.0, "Empty plan should be 0%"
+
+        finally:
+            cleanup_test_environment(temp_dir, saved_env)
+
+    def test_subtask_status_transition_to_completed(self):
+        """Test detecting subtask transition from pending to completed."""
+        from agents.utils import load_implementation_plan, find_subtask_in_plan
+        from progress import is_build_complete
+
+        temp_dir, spec_dir, project_dir, saved_env = setup_test_environment()
+
+        try:
+            # Start with pending subtask
+            create_implementation_plan(spec_dir, [
+                {"id": "subtask-1", "description": "Task 1", "status": "pending"}
+            ])
+
+            plan = load_implementation_plan(spec_dir)
+            subtask = find_subtask_in_plan(plan, "subtask-1")
+            assert subtask["status"] == "pending", "Initial status should be pending"
+            assert is_build_complete(spec_dir) is False, "Should not be complete"
+
+            # Update to completed
+            create_implementation_plan(spec_dir, [
+                {"id": "subtask-1", "description": "Task 1", "status": "completed"}
+            ])
+
+            plan = load_implementation_plan(spec_dir)
+            subtask = find_subtask_in_plan(plan, "subtask-1")
+            assert subtask["status"] == "completed", "Updated status should be completed"
+            assert is_build_complete(spec_dir) is True, "Should now be complete"
+
+        finally:
+            cleanup_test_environment(temp_dir, saved_env)
+
+    def test_subtask_status_transition_through_in_progress(self):
+        """Test detecting subtask transition through in_progress state."""
+        from agents.utils import load_implementation_plan, find_subtask_in_plan
+        from progress import count_subtasks_detailed
+
+        temp_dir, spec_dir, project_dir, saved_env = setup_test_environment()
+
+        try:
+            # Start pending
+            create_implementation_plan(spec_dir, [
+                {"id": "subtask-1", "description": "Task 1", "status": "pending"}
+            ])
+
+            counts = count_subtasks_detailed(spec_dir)
+            assert counts["pending"] == 1, "Should have 1 pending"
+            assert counts["in_progress"] == 0, "Should have 0 in_progress"
+
+            # Move to in_progress
+            create_implementation_plan(spec_dir, [
+                {"id": "subtask-1", "description": "Task 1", "status": "in_progress"}
+            ])
+
+            counts = count_subtasks_detailed(spec_dir)
+            assert counts["pending"] == 0, "Should have 0 pending"
+            assert counts["in_progress"] == 1, "Should have 1 in_progress"
+
+            # Complete
+            create_implementation_plan(spec_dir, [
+                {"id": "subtask-1", "description": "Task 1", "status": "completed"}
+            ])
+
+            counts = count_subtasks_detailed(spec_dir)
+            assert counts["in_progress"] == 0, "Should have 0 in_progress"
+            assert counts["completed"] == 1, "Should have 1 completed"
+
+        finally:
+            cleanup_test_environment(temp_dir, saved_env)
+
+    def test_multiple_subtasks_completion_sequence(self):
+        """Test completion detection as subtasks complete one by one."""
+        from progress import count_subtasks, is_build_complete
+
+        temp_dir, spec_dir, project_dir, saved_env = setup_test_environment()
+
+        try:
+            # Start with all pending
+            create_implementation_plan(spec_dir, [
+                {"id": "subtask-1", "description": "Task 1", "status": "pending"},
+                {"id": "subtask-2", "description": "Task 2", "status": "pending"},
+                {"id": "subtask-3", "description": "Task 3", "status": "pending"}
+            ])
+
+            completed, total = count_subtasks(spec_dir)
+            assert completed == 0 and total == 3, "Initial: 0/3"
+            assert is_build_complete(spec_dir) is False
+
+            # Complete first subtask
+            create_implementation_plan(spec_dir, [
+                {"id": "subtask-1", "description": "Task 1", "status": "completed"},
+                {"id": "subtask-2", "description": "Task 2", "status": "pending"},
+                {"id": "subtask-3", "description": "Task 3", "status": "pending"}
+            ])
+
+            completed, total = count_subtasks(spec_dir)
+            assert completed == 1 and total == 3, "After first: 1/3"
+            assert is_build_complete(spec_dir) is False
+
+            # Complete second subtask
+            create_implementation_plan(spec_dir, [
+                {"id": "subtask-1", "description": "Task 1", "status": "completed"},
+                {"id": "subtask-2", "description": "Task 2", "status": "completed"},
+                {"id": "subtask-3", "description": "Task 3", "status": "pending"}
+            ])
+
+            completed, total = count_subtasks(spec_dir)
+            assert completed == 2 and total == 3, "After second: 2/3"
+            assert is_build_complete(spec_dir) is False
+
+            # Complete all subtasks
+            create_implementation_plan(spec_dir, [
+                {"id": "subtask-1", "description": "Task 1", "status": "completed"},
+                {"id": "subtask-2", "description": "Task 2", "status": "completed"},
+                {"id": "subtask-3", "description": "Task 3", "status": "completed"}
+            ])
+
+            completed, total = count_subtasks(spec_dir)
+            assert completed == 3 and total == 3, "Final: 3/3"
+            assert is_build_complete(spec_dir) is True
+
+        finally:
+            cleanup_test_environment(temp_dir, saved_env)
+
+    def test_get_next_subtask_returns_first_pending_after_completed(self):
+        """Test get_next_subtask returns correct subtask after completions."""
+        from progress import get_next_subtask
+
+        temp_dir, spec_dir, project_dir, saved_env = setup_test_environment()
+
+        try:
+            # First and second completed, third pending
+            create_implementation_plan(spec_dir, [
+                {"id": "subtask-1", "description": "Task 1", "status": "completed"},
+                {"id": "subtask-2", "description": "Task 2", "status": "completed"},
+                {"id": "subtask-3", "description": "Task 3", "status": "pending"}
+            ])
+
+            next_subtask = get_next_subtask(spec_dir)
+            assert next_subtask is not None, "Should find next subtask"
+            assert next_subtask["id"] == "subtask-3", "Should return subtask-3"
+
+        finally:
+            cleanup_test_environment(temp_dir, saved_env)
+
+    def test_get_next_subtask_none_when_all_complete(self):
+        """Test get_next_subtask returns None when all complete."""
+        from progress import get_next_subtask
+
+        temp_dir, spec_dir, project_dir, saved_env = setup_test_environment()
+
+        try:
+            create_implementation_plan(spec_dir, [
+                {"id": "subtask-1", "description": "Task 1", "status": "completed"},
+                {"id": "subtask-2", "description": "Task 2", "status": "completed"}
+            ])
+
+            next_subtask = get_next_subtask(spec_dir)
+            assert next_subtask is None, "Should return None when all complete"
+
+        finally:
+            cleanup_test_environment(temp_dir, saved_env)
+
+    def test_completion_detection_with_multi_phase_plan(self):
+        """Test completion detection across multiple phases."""
+        from progress import is_build_complete, count_subtasks
+
+        temp_dir, spec_dir, project_dir, saved_env = setup_test_environment()
+
+        try:
+            # Multi-phase plan
+            plan = {
+                "feature": "Test Feature",
+                "workflow_type": "feature",
+                "status": "in_progress",
+                "phases": [
+                    {
+                        "id": "phase-1",
+                        "name": "Setup Phase",
+                        "type": "setup",
+                        "subtasks": [
+                            {"id": "subtask-1-1", "description": "Setup DB", "status": "completed"}
+                        ]
+                    },
+                    {
+                        "id": "phase-2",
+                        "name": "Implementation Phase",
+                        "type": "implementation",
+                        "subtasks": [
+                            {"id": "subtask-2-1", "description": "Implement feature", "status": "pending"},
+                            {"id": "subtask-2-2", "description": "Add tests", "status": "pending"}
+                        ]
+                    }
+                ]
+            }
+            (spec_dir / "implementation_plan.json").write_text(json.dumps(plan))
+
+            completed, total = count_subtasks(spec_dir)
+            assert completed == 1 and total == 3, "Should count across phases: 1/3"
+            assert is_build_complete(spec_dir) is False, "Should not be complete"
+
+            # Complete all in second phase
+            plan["phases"][1]["subtasks"][0]["status"] = "completed"
+            plan["phases"][1]["subtasks"][1]["status"] = "completed"
+            (spec_dir / "implementation_plan.json").write_text(json.dumps(plan))
+
+            completed, total = count_subtasks(spec_dir)
+            assert completed == 3 and total == 3, "All phases complete: 3/3"
+            assert is_build_complete(spec_dir) is True, "Should be complete"
+
+        finally:
+            cleanup_test_environment(temp_dir, saved_env)
+
+
+# =============================================================================
 # MAIN ENTRY POINT
 # =============================================================================
 
