@@ -156,12 +156,12 @@ Plans:
 - SUMMARY.md: "Better context means specialists produce fewer hallucinated findings"
 - PITFALLS.md: #3 "Incomplete Import Analysis" is moderate pitfall
 
-**Status:** Planned (2026-01-19)
+**Status:** Complete (2026-01-19)
 
 Plans:
-- [ ] 02-01-PLAN.md - JS/TS import analysis: path aliases, CommonJS, re-exports (Wave 1)
-- [ ] 02-02-PLAN.md - Python import analysis via AST (Wave 1)
-- [ ] 02-03-PLAN.md - Related files: limit 50, prioritization, reverse deps (Wave 2)
+- [x] 02-01-PLAN.md - JS/TS import analysis: path aliases, CommonJS, re-exports (Wave 1)
+- [x] 02-02-PLAN.md - Python import analysis via AST (Wave 1)
+- [x] 02-03-PLAN.md - Related files: limit 50, prioritization, reverse deps (Wave 2)
 
 ### P2.1: JS/TS Import Analysis
 
@@ -236,10 +236,17 @@ Plans:
 ## Phase 3: Cross-Validation
 
 **Goal:** Enhance confidence scoring and multi-agent agreement.
+**Plans:** 2 plans in 2 waves
 
 **Research Basis:**
 - ARCHITECTURE.md: Confidence thresholds and multi-source agreement patterns
 - STACK.md: "Multi-review aggregation significantly boosts F1 scores"
+
+**Status:** In Progress
+
+Plans:
+- [ ] 03-01-PLAN.md - Confidence threshold routing (Wave 1)
+- [ ] 03-02-PLAN.md - Multi-agent agreement and confidence boost (Wave 2)
 
 ### P3.1: Confidence Scoring
 
@@ -360,4 +367,4 @@ Week 3: Phase 3 + 4 (Cross-Validation + Testing)
 
 *Roadmap created: 2026-01-19*
 *Phase 1 completed: 2026-01-19*
-*Phase 2 planned: 2026-01-19*
+*Phase 2 completed: 2026-01-19*
