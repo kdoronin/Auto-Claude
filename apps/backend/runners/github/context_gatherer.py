@@ -1131,6 +1131,63 @@ class PRContextGatherer:
 
         return dependents
 
+    def _prioritize_related_files(self, files: set[str], limit: int = 50) -> list[str]:
+        """
+        Prioritize related files by relevance.
+
+        Priority order:
+        1. Test files (most important for review context)
+        2. Type definition files (.d.ts)
+        3. Configuration files
+        4. Direct imports/dependents
+        5. Other files
+
+        Args:
+            files: Set of file paths to prioritize
+            limit: Maximum number of files to return
+
+        Returns:
+            List of files sorted by priority, limited to `limit`.
+        """
+        test_files = []
+        type_files = []
+        config_files = []
+        other_files = []
+
+        for f in files:
+            path = Path(f)
+            name_lower = path.name.lower()
+
+            # Test files
+            if (
+                ".test." in name_lower
+                or ".spec." in name_lower
+                or name_lower.startswith("test_")
+                or name_lower.endswith("_test.py")
+                or "__tests__" in f
+            ):
+                test_files.append(f)
+            # Type definition files
+            elif name_lower.endswith(".d.ts") or "types" in name_lower:
+                type_files.append(f)
+            # Config files
+            elif name_lower in [
+                n.lower() for n in CONFIG_FILE_NAMES
+            ] or name_lower.endswith((".config.js", ".config.ts", "rc", "rc.json")):
+                config_files.append(f)
+            else:
+                other_files.append(f)
+
+        # Sort within each category alphabetically for consistency, then combine
+        prioritized = (
+            sorted(test_files)
+            + sorted(type_files)
+            + sorted(config_files)
+            + sorted(other_files)
+        )
+
+        return prioritized[:limit]
+
     def _load_json_safe(self, filename: str) -> dict | None:
         """
         Load JSON file from project_dir, handling tsconfig-style comments.
