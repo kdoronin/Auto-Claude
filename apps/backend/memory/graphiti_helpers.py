@@ -12,6 +12,8 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from core.sentry import capture_exception
+
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
@@ -73,6 +75,12 @@ async def get_graphiti_memory(
         return None
     except Exception as e:
         logger.warning(f"Failed to initialize Graphiti memory: {e}")
+        capture_exception(
+            e,
+            function="get_graphiti_memory",
+            spec_dir=str(spec_dir),
+            project_dir=str(project_dir) if project_dir else None,
+        )
         return None
 
 
@@ -142,13 +150,27 @@ async def save_to_graphiti_async(
 
     except Exception as e:
         logger.warning(f"Failed to save to Graphiti: {e}")
+        capture_exception(
+            e,
+            function="save_to_graphiti_async",
+            spec_dir=str(spec_dir),
+            session_num=session_num,
+            project_dir=str(project_dir) if project_dir else None,
+        )
         return False
     finally:
         # Always close the graphiti connection (swallow exceptions to avoid overriding)
         if graphiti is not None:
             try:
                 await graphiti.close()
-            except Exception as e:
+            except Exception as close_error:
                 logger.debug(
                     "Failed to close Graphiti memory connection", exc_info=True
+                )
+                capture_exception(
+                    close_error,
+                    function="save_to_graphiti_async",
+                    context="closing_connection",
+                    spec_dir=str(spec_dir),
+                    session_num=session_num,
                 )
