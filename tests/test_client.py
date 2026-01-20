@@ -9,13 +9,29 @@ Tests the client.py and simple_client.py module functionality including:
 - Client creation with valid tokens
 """
 
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+# Auth token env vars that need to be cleared between tests
+AUTH_TOKEN_ENV_VARS = [
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "ANTHROPIC_AUTH_TOKEN",
+]
+
 
 class TestClientTokenValidation:
     """Tests for client token validation."""
+
+    @pytest.fixture(autouse=True)
+    def clear_env(self):
+        """Clear auth environment variables before and after each test."""
+        for var in AUTH_TOKEN_ENV_VARS:
+            os.environ.pop(var, None)
+        yield
+        for var in AUTH_TOKEN_ENV_VARS:
+            os.environ.pop(var, None)
 
     def test_create_client_rejects_encrypted_tokens(self, tmp_path, monkeypatch):
         """Verify create_client() rejects encrypted tokens."""
