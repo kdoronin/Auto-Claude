@@ -60,6 +60,8 @@ SDK_ENV_VARS = [
     "CLAUDE_CODE_GIT_BASH_PATH",
     # Claude CLI path override (allows frontend to pass detected CLI path to SDK)
     "CLAUDE_CLI_PATH",
+    # Profile's custom config directory (for multi-profile token storage)
+    "CLAUDE_CONFIG_DIR",
 ]
 
 
@@ -478,14 +480,62 @@ def _get_token_from_linux_secret_service() -> str | None:
         return None
 
 
-def get_auth_token() -> str | None:
+def _get_token_from_config_dir(config_dir: str) -> str | None:
     """
-    Get authentication token from environment variables or system credential store.
+    Read token from a custom config directory's credentials file.
+
+    Claude Code stores credentials in .credentials.json within the config directory.
+    This function reads from a profile's custom configDir instead of the default location.
+
+    Args:
+        config_dir: Path to the config directory (e.g., ~/.auto-claude/profiles/work)
+
+    Returns:
+        Token string if found, None otherwise
+    """
+    # Expand ~ if present
+    expanded_dir = os.path.expanduser(config_dir)
+
+    # Claude stores credentials in these files within the config dir
+    cred_files = [
+        os.path.join(expanded_dir, ".credentials.json"),
+        os.path.join(expanded_dir, "credentials.json"),
+    ]
+
+    for cred_path in cred_files:
+        if os.path.exists(cred_path):
+            try:
+                with open(cred_path, encoding="utf-8") as f:
+                    data = json.load(f)
+
+                # Try both credential structures
+                oauth_data = data.get("claudeAiOauth") or data.get("oauthAccount") or {}
+                token = oauth_data.get("accessToken")
+
+                if token and token.startswith("sk-ant-oat01-"):
+                    logger.debug(f"Found token in {cred_path}")
+                    return token
+            except (json.JSONDecodeError, KeyError, Exception) as e:
+                logger.debug(f"Failed to read {cred_path}: {e}")
+                continue
+
+    return None
+
+
+def get_auth_token(config_dir: str | None = None) -> str | None:
+    """
+    Get authentication token from environment variables or credential store.
+
+    Args:
+        config_dir: Optional custom config directory (profile's configDir).
+                   If provided, reads credentials from this directory.
+                   If None, checks CLAUDE_CONFIG_DIR env var, then uses default locations.
 
     Checks multiple sources in priority order:
     1. CLAUDE_CODE_OAUTH_TOKEN (env var)
     2. ANTHROPIC_AUTH_TOKEN (CCR/proxy env var for enterprise setups)
-    3. System credential store (macOS Keychain, Windows Credential Manager, Linux Secret Service)
+    3. Custom config directory (config_dir param or CLAUDE_CONFIG_DIR env var)
+    4. System credential store (macOS Keychain, Windows Credential Manager, Linux Secret Service)
 
     NOTE: ANTHROPIC_API_KEY is intentionally NOT supported to prevent
     silent billing to user's API credits when OAuth is misconfigured.
@@ -496,7 +546,7 @@ def get_auth_token() -> str | None:
     Returns:
         Token string if found, None otherwise
     """
-    # First check environment variables
+    # First check environment variables (highest priority)
     for var in AUTH_TOKEN_ENV_VARS:
         token = os.environ.get(var)
         if token:
@@ -510,7 +560,23 @@ def get_auth_token() -> str | None:
                     return token
             return token
 
-    # Fallback to system credential store
+    # Check CLAUDE_CONFIG_DIR environment variable (profile's custom config directory)
+    env_config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+    effective_config_dir = config_dir or env_config_dir
+
+    # If a custom config directory is specified, read from there
+    if effective_config_dir:
+        token = _get_token_from_config_dir(effective_config_dir)
+        if token:
+            # Handle encrypted tokens from config dir
+            if is_encrypted_token(token):
+                try:
+                    token = decrypt_token(token)
+                except ValueError:
+                    return token
+            return token
+
+    # Fallback to system credential store (default locations)
     token = get_token_from_keychain()
     if token and is_encrypted_token(token):
         try:
@@ -542,14 +608,19 @@ def get_auth_token_source() -> str | None:
     return None
 
 
-def require_auth_token() -> str:
+def require_auth_token(config_dir: str | None = None) -> str:
     """
     Get authentication token or raise ValueError.
+
+    Args:
+        config_dir: Optional custom config directory (profile's configDir).
+                   If provided, reads credentials from this directory.
+                   If None, checks CLAUDE_CONFIG_DIR env var, then uses default locations.
 
     Raises:
         ValueError: If no auth token is found in any supported source
     """
-    token = get_auth_token()
+    token = get_auth_token(config_dir)
     if not token:
         error_msg = (
             "No OAuth token found.\n\n"
