@@ -87,7 +87,9 @@ export function useAutoNaming({ terminalId, cwd }: UseAutoNamingOptions) {
         window.electronAPI.setTerminalTitle(terminalId, result.data);
 
         // Mark Claude terminal as named once to prevent repeated renames
-        if (terminal?.isClaudeMode) {
+        // Re-fetch terminal state after async operation to avoid stale closure
+        const currentTerminal = useTerminalStore.getState().terminals.find((t) => t.id === terminalId);
+        if (currentTerminal?.isClaudeMode) {
           setClaudeNamedOnce(terminalId, true);
         }
       }

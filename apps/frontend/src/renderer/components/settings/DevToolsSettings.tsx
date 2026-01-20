@@ -376,6 +376,7 @@ export function DevToolsSettings({ settings, onSettingsChange }: DevToolsSetting
                 {t('devtools.autoNameClaude.description', 'Use AI to generate a descriptive name for Claude terminals based on your first message')}
               </p>
             </div>
+            {/* Fallback to true for existing users who don't have this setting in persisted config */}
             <Switch
               id="auto-name-claude-terminals"
               checked={settings.autoNameClaudeTerminals ?? true}
