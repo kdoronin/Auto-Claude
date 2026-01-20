@@ -40,6 +40,12 @@ class TestClientTokenValidation:
         monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "enc:test123456789012")
         # Mock keychain to ensure encrypted token is the only source
         monkeypatch.setattr("core.auth.get_token_from_keychain", lambda: None)
+        # Mock decrypt_token to raise ValueError (simulates decryption failure)
+        # This ensures the encrypted token flows through to validate_token_not_encrypted
+        monkeypatch.setattr(
+            "core.auth.decrypt_token",
+            lambda t: (_ for _ in ()).throw(ValueError("Decryption not supported")),
+        )
 
         with pytest.raises(ValueError, match="encrypted format"):
             create_client(tmp_path, tmp_path, "claude-sonnet-4", "coder")
@@ -51,6 +57,11 @@ class TestClientTokenValidation:
         monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "enc:test123456789012")
         # Mock keychain to ensure encrypted token is the only source
         monkeypatch.setattr("core.auth.get_token_from_keychain", lambda: None)
+        # Mock decrypt_token to raise ValueError (simulates decryption failure)
+        monkeypatch.setattr(
+            "core.auth.decrypt_token",
+            lambda t: (_ for _ in ()).throw(ValueError("Decryption not supported")),
+        )
 
         with pytest.raises(ValueError, match="encrypted format"):
             create_simple_client(agent_type="merge_resolver")
