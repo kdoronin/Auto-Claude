@@ -79,6 +79,8 @@ orchestrator_spec = importlib.util.spec_from_file_location(
 )
 orchestrator_module = importlib.util.module_from_spec(orchestrator_spec)
 # Mock dependencies that aren't needed for unit testing
+# IMPORTANT: Save and restore phase_config to avoid polluting sys.modules for other tests
+_original_phase_config = sys.modules.get('phase_config')
 sys.modules['context_gatherer'] = MagicMock()
 sys.modules['core.client'] = MagicMock()
 sys.modules['gh_client'] = MagicMock()
@@ -87,6 +89,11 @@ sys.modules['services.pr_worktree_manager'] = MagicMock()
 sys.modules['services.sdk_utils'] = MagicMock()
 sys.modules['claude_agent_sdk'] = MagicMock()
 orchestrator_spec.loader.exec_module(orchestrator_module)
+# Restore phase_config to avoid polluting other tests
+if _original_phase_config is not None:
+    sys.modules['phase_config'] = _original_phase_config
+else:
+    del sys.modules['phase_config']
 ConfidenceTier = orchestrator_module.ConfidenceTier
 _validate_finding_evidence = orchestrator_module._validate_finding_evidence
 _is_finding_in_scope = orchestrator_module._is_finding_in_scope
