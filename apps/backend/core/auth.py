@@ -316,6 +316,36 @@ def _decrypt_token_windows(encrypted_data: str) -> str:
     )
 
 
+def _try_decrypt_token(token: str | None) -> str | None:
+    """
+    Attempt to decrypt an encrypted token, returning original if decryption fails.
+
+    This helper centralizes the decrypt-or-return-as-is logic used when resolving
+    tokens from various sources (env vars, config dir, keychain).
+
+    Args:
+        token: Token string (may be encrypted with "enc:" prefix, plaintext, or None)
+
+    Returns:
+        - Decrypted token if successfully decrypted
+        - Original token if decryption fails (allows client validation to report error)
+        - Original token if not encrypted
+        - None if token is None
+    """
+    if not token:
+        return None
+
+    if is_encrypted_token(token):
+        try:
+            return decrypt_token(token)
+        except ValueError:
+            # Decryption failed - return encrypted token so client validation
+            # (validate_token_not_encrypted) can provide specific error message.
+            return token
+
+    return token
+
+
 def get_token_from_keychain() -> str | None:
     """
     Get authentication token from system credential store.
@@ -512,7 +542,10 @@ def _get_token_from_config_dir(config_dir: str) -> str | None:
                 oauth_data = data.get("claudeAiOauth") or data.get("oauthAccount") or {}
                 token = oauth_data.get("accessToken")
 
-                if token and token.startswith("sk-ant-oat01-"):
+                # Accept both plaintext tokens (sk-ant-oat01-) and encrypted tokens (enc:)
+                if token and (
+                    token.startswith("sk-ant-oat01-") or token.startswith("enc:")
+                ):
                     logger.debug(f"Found token in {cred_path}")
                     return token
             except (json.JSONDecodeError, KeyError, Exception) as e:
@@ -550,15 +583,7 @@ def get_auth_token(config_dir: str | None = None) -> str | None:
     for var in AUTH_TOKEN_ENV_VARS:
         token = os.environ.get(var)
         if token:
-            # Decrypt if token is encrypted
-            if is_encrypted_token(token):
-                try:
-                    token = decrypt_token(token)
-                except ValueError:
-                    # Decryption failed - return encrypted token so client validation
-                    # can provide specific error message about encrypted format
-                    return token
-            return token
+            return _try_decrypt_token(token)
 
     # Check CLAUDE_CONFIG_DIR environment variable (profile's custom config directory)
     env_config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
@@ -568,25 +593,10 @@ def get_auth_token(config_dir: str | None = None) -> str | None:
     if effective_config_dir:
         token = _get_token_from_config_dir(effective_config_dir)
         if token:
-            # Handle encrypted tokens from config dir
-            if is_encrypted_token(token):
-                try:
-                    token = decrypt_token(token)
-                except ValueError:
-                    return token
-            return token
+            return _try_decrypt_token(token)
 
     # Fallback to system credential store (default locations)
-    token = get_token_from_keychain()
-    if token and is_encrypted_token(token):
-        try:
-            token = decrypt_token(token)
-        except ValueError:
-            # Decryption failed - return encrypted token so client validation
-            # (validate_token_not_encrypted) can provide specific error message.
-            # This is consistent with env var handling above.
-            return token
-    return token
+    return _try_decrypt_token(get_token_from_keychain())
 
 
 def get_auth_token_source() -> str | None:
@@ -595,6 +605,11 @@ def get_auth_token_source() -> str | None:
     for var in AUTH_TOKEN_ENV_VARS:
         if os.environ.get(var):
             return var
+
+    # Check if token came from custom config directory (profile's configDir)
+    env_config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+    if env_config_dir and _get_token_from_config_dir(env_config_dir):
+        return "CLAUDE_CONFIG_DIR"
 
     # Check if token came from system credential store
     if get_token_from_keychain():

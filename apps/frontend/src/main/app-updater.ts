@@ -159,11 +159,8 @@ export function initializeAppUpdater(window: BrowserWindow, betaUpdates = false)
       releaseDate: info.releaseDate
     };
     if (mainWindow) {
-      mainWindow.webContents.send(IPC_CHANNELS.APP_UPDATE_DOWNLOADED, {
-        version: info.version,
-        releaseNotes: formatReleaseNotes(info.releaseNotes),
-        releaseDate: info.releaseDate
-      });
+      // Reuse downloadedUpdateInfo instead of calling formatReleaseNotes again
+      mainWindow.webContents.send(IPC_CHANNELS.APP_UPDATE_DOWNLOADED, downloadedUpdateInfo);
     }
   });
 
