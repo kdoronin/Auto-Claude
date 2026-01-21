@@ -13,6 +13,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from './ui/tooltip';
+import { UsageProgressBar } from './ui/usage-progress-bar';
+import { getUsageBadgeClasses, isUsageCritical, isUsageWarning } from '../lib/usage-colors';
 import type { ClaudeUsageSnapshot } from '../../shared/types/agent';
 
 export function UsageIndicator() {
@@ -45,16 +47,11 @@ export function UsageIndicator() {
 
   // Determine color based on highest usage percentage
   const maxUsage = Math.max(usage.sessionPercent, usage.weeklyPercent);
-
-  const colorClasses =
-    maxUsage >= 95 ? 'text-red-500 bg-red-500/10 border-red-500/20' :
-    maxUsage >= 91 ? 'text-orange-500 bg-orange-500/10 border-orange-500/20' :
-    maxUsage >= 71 ? 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20' :
-    'text-green-500 bg-green-500/10 border-green-500/20';
+  const colorClasses = getUsageBadgeClasses(maxUsage);
 
   const Icon =
-    maxUsage >= 91 ? AlertCircle :
-    maxUsage >= 71 ? TrendingUp :
+    isUsageCritical(maxUsage) ? AlertCircle :
+    isUsageWarning(maxUsage) ? TrendingUp :
     Activity;
 
   return (
@@ -85,17 +82,7 @@ export function UsageIndicator() {
                 </div>
               )}
               {/* Progress bar */}
-              <div className="mt-1.5 h-1.5 bg-muted rounded-full overflow-hidden">
-                <div
-                  className={`h-full transition-all ${
-                    usage.sessionPercent >= 95 ? 'bg-red-500' :
-                    usage.sessionPercent >= 91 ? 'bg-orange-500' :
-                    usage.sessionPercent >= 71 ? 'bg-yellow-500' :
-                    'bg-green-500'
-                  }`}
-                  style={{ width: `${Math.min(usage.sessionPercent, 100)}%` }}
-                />
-              </div>
+              <UsageProgressBar percent={usage.sessionPercent} />
             </div>
 
             <div className="h-px bg-border" />
@@ -112,17 +99,7 @@ export function UsageIndicator() {
                 </div>
               )}
               {/* Progress bar */}
-              <div className="mt-1.5 h-1.5 bg-muted rounded-full overflow-hidden">
-                <div
-                  className={`h-full transition-all ${
-                    usage.weeklyPercent >= 99 ? 'bg-red-500' :
-                    usage.weeklyPercent >= 91 ? 'bg-orange-500' :
-                    usage.weeklyPercent >= 71 ? 'bg-yellow-500' :
-                    'bg-green-500'
-                  }`}
-                  style={{ width: `${Math.min(usage.weeklyPercent, 100)}%` }}
-                />
-              </div>
+              <UsageProgressBar percent={usage.weeklyPercent} />
             </div>
 
             <div className="h-px bg-border" />

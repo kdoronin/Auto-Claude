@@ -4,32 +4,13 @@ import { User, Loader2, AlertTriangle } from 'lucide-react';
 import { Button } from './ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
+import { UsageProgressBar } from './ui/usage-progress-bar';
 import { cn } from '../lib/utils';
+import { getUsageBgColor, getUsageTextColor } from '../lib/usage-colors';
 import { useUsageStore, loadUsageData, subscribeToUsageUpdates } from '../stores/usage-store';
 
 interface AccountProfileIndicatorProps {
   className?: string;
-}
-
-/**
- * Get the color class for a usage percentage based on thresholds.
- * Color thresholds: green (0-70), yellow (71-90), orange (91-94), red (95+)
- */
-function getUsageColor(percent: number): string {
-  if (percent >= 95) return 'bg-red-500';
-  if (percent >= 91) return 'bg-orange-500';
-  if (percent >= 71) return 'bg-yellow-500';
-  return 'bg-green-500';
-}
-
-/**
- * Get the text color class for a usage percentage.
- */
-function getUsageTextColor(percent: number): string {
-  if (percent >= 95) return 'text-red-500';
-  if (percent >= 91) return 'text-orange-500';
-  if (percent >= 71) return 'text-yellow-500';
-  return 'text-green-500';
 }
 
 /**
@@ -41,19 +22,41 @@ function getStatusIndicatorColor(
   sonnetPercent?: number
 ): string {
   const maxUsage = Math.max(sessionPercent, weeklyPercent, sonnetPercent ?? 0);
-  return getUsageColor(maxUsage);
+  return getUsageBgColor(maxUsage);
 }
 
 /**
- * Progress bar component for usage display.
+ * Reusable usage section component for displaying usage metrics.
  */
-function UsageProgressBar({ percent }: { percent: number }) {
+interface UsageSectionProps {
+  label: string;
+  percent: number;
+  resetTime?: string;
+  resetLabel: string;
+}
+
+function UsageSection({ label, percent, resetTime, resetLabel }: UsageSectionProps) {
   return (
-    <div className="mt-1.5 h-1.5 bg-muted rounded-full overflow-hidden">
-      <div
-        className={cn('h-full transition-all', getUsageColor(percent))}
-        style={{ width: `${Math.min(percent, 100)}%` }}
-      />
+    <div className="p-2 bg-muted rounded-md">
+      <div className="flex items-center justify-between gap-4 mb-1">
+        <span className="text-xs text-muted-foreground font-medium">
+          {label}
+        </span>
+        <span
+          className={cn(
+            'text-xs font-semibold tabular-nums',
+            getUsageTextColor(percent)
+          )}
+        >
+          {Math.round(percent)}%
+        </span>
+      </div>
+      <UsageProgressBar percent={percent} />
+      {resetTime && (
+        <div className="text-[10px] text-muted-foreground mt-1">
+          {resetLabel}
+        </div>
+      )}
     </div>
   );
 }
@@ -192,77 +195,32 @@ export function AccountProfileIndicator({ className }: AccountProfileIndicatorPr
           )}
 
           {/* Usage data */}
-          {usage && !isLoading && (
+          {usage && !isLoading && !error && (
             <div className="space-y-3">
               {/* Session Usage */}
-              <div className="p-2 bg-muted rounded-md">
-                <div className="flex items-center justify-between gap-4 mb-1">
-                  <span className="text-xs text-muted-foreground font-medium">
-                    {t('navigation:accountProfile.sessionUsage')}
-                  </span>
-                  <span
-                    className={cn(
-                      'text-xs font-semibold tabular-nums',
-                      getUsageTextColor(usage.sessionPercent)
-                    )}
-                  >
-                    {Math.round(usage.sessionPercent)}%
-                  </span>
-                </div>
-                <UsageProgressBar percent={usage.sessionPercent} />
-                {usage.sessionResetTime && (
-                  <div className="text-[10px] text-muted-foreground mt-1">
-                    {t('navigation:accountProfile.resetsAt', { time: usage.sessionResetTime })}
-                  </div>
-                )}
-              </div>
+              <UsageSection
+                label={t('navigation:accountProfile.sessionUsage')}
+                percent={usage.sessionPercent}
+                resetTime={usage.sessionResetTime}
+                resetLabel={t('navigation:accountProfile.resetsAt', { time: usage.sessionResetTime })}
+              />
 
               {/* Weekly Usage (All Models) */}
-              <div className="p-2 bg-muted rounded-md">
-                <div className="flex items-center justify-between gap-4 mb-1">
-                  <span className="text-xs text-muted-foreground font-medium">
-                    {t('navigation:accountProfile.weeklyUsage')}
-                  </span>
-                  <span
-                    className={cn(
-                      'text-xs font-semibold tabular-nums',
-                      getUsageTextColor(usage.weeklyPercent)
-                    )}
-                  >
-                    {Math.round(usage.weeklyPercent)}%
-                  </span>
-                </div>
-                <UsageProgressBar percent={usage.weeklyPercent} />
-                {usage.weeklyResetTime && (
-                  <div className="text-[10px] text-muted-foreground mt-1">
-                    {t('navigation:accountProfile.resetsAt', { time: usage.weeklyResetTime })}
-                  </div>
-                )}
-              </div>
+              <UsageSection
+                label={t('navigation:accountProfile.weeklyUsage')}
+                percent={usage.weeklyPercent}
+                resetTime={usage.weeklyResetTime}
+                resetLabel={t('navigation:accountProfile.resetsAt', { time: usage.weeklyResetTime })}
+              />
 
               {/* Sonnet Weekly Usage - only show if data available */}
               {usage.sonnetWeeklyPercent !== undefined && (
-                <div className="p-2 bg-muted rounded-md">
-                  <div className="flex items-center justify-between gap-4 mb-1">
-                    <span className="text-xs text-muted-foreground font-medium">
-                      {t('navigation:accountProfile.sonnetUsage')}
-                    </span>
-                    <span
-                      className={cn(
-                        'text-xs font-semibold tabular-nums',
-                        getUsageTextColor(usage.sonnetWeeklyPercent)
-                      )}
-                    >
-                      {Math.round(usage.sonnetWeeklyPercent)}%
-                    </span>
-                  </div>
-                  <UsageProgressBar percent={usage.sonnetWeeklyPercent} />
-                  {usage.sonnetWeeklyResetTime && (
-                    <div className="text-[10px] text-muted-foreground mt-1">
-                      {t('navigation:accountProfile.resetsAt', { time: usage.sonnetWeeklyResetTime })}
-                    </div>
-                  )}
-                </div>
+                <UsageSection
+                  label={t('navigation:accountProfile.sonnetUsage')}
+                  percent={usage.sonnetWeeklyPercent}
+                  resetTime={usage.sonnetWeeklyResetTime}
+                  resetLabel={t('navigation:accountProfile.resetsAt', { time: usage.sonnetWeeklyResetTime })}
+                />
               )}
 
               {/* Last updated timestamp */}

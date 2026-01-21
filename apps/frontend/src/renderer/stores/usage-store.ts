@@ -33,7 +33,8 @@ export const useUsageStore = create<UsageState>((set) => ({
   },
 
   setError: (error: string | null) => {
-    set({ error });
+    // Clear stale usage data when setting an error to prevent showing outdated data
+    set({ error, usage: null });
   },
 
   clearUsage: () => {
@@ -47,9 +48,16 @@ export const useUsageStore = create<UsageState>((set) => ({
 /**
  * Load usage data from the main process
  * Called on component mount to get initial usage state
+ * Includes concurrency guard to prevent race conditions from rapid calls
  */
 export async function loadUsageData(): Promise<void> {
   const store = useUsageStore.getState();
+
+  // Concurrency guard: skip if already loading to prevent race conditions
+  if (store.isLoading) {
+    return;
+  }
+
   store.setLoading(true);
 
   try {
