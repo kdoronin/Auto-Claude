@@ -48,6 +48,7 @@ import { AgentTools } from './components/AgentTools';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { RateLimitModal } from './components/RateLimitModal';
 import { SDKRateLimitModal } from './components/SDKRateLimitModal';
+import { AuthFailureModal } from './components/AuthFailureModal';
 import { OnboardingWizard } from './components/onboarding';
 import { AppUpdateNotification } from './components/AppUpdateNotification';
 import { ProactiveSwapListener } from './components/ProactiveSwapListener';
@@ -541,7 +542,9 @@ export function App() {
     if (!currentProjectId) return;
     setIsRefreshingTasks(true);
     try {
-      await loadTasks(currentProjectId);
+      // Pass forceRefresh: true to invalidate cache and get fresh data from disk
+      // This ensures the refresh button always shows the latest task state
+      await loadTasks(currentProjectId, { forceRefresh: true });
     } finally {
       setIsRefreshingTasks(false);
     }
@@ -1074,6 +1077,9 @@ export function App() {
 
         {/* SDK Rate Limit Modal - shows when SDK/CLI operations hit limits (changelog, tasks, etc.) */}
         <SDKRateLimitModal />
+
+        {/* Auth Failure Modal - shows when Claude CLI encounters 401/auth errors */}
+        <AuthFailureModal onOpenSettings={() => setIsSettingsDialogOpen(true)} />
 
         {/* Onboarding Wizard - shows on first launch when onboardingCompleted is false */}
         <OnboardingWizard
