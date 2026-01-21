@@ -43,8 +43,45 @@ vi.mock('electron', () => ({
   contextBridge: mockContextBridge
 }));
 
+// Test data interfaces - minimal shapes for mock data (not full production types)
+interface TestProjectData {
+  id: string;
+  name: string;
+  path: string;
+  createdAt: string;
+  updatedAt: string;
+  settings: {
+    model: string;
+    maxThinkingTokens: number;
+  };
+}
+
+interface TestTaskData {
+  id: string;
+  projectId: string;
+  title: string;
+  description: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  // Optional extended properties used in some tests
+  metadata?: Record<string, unknown>;
+  plan?: Record<string, unknown>;
+}
+
+interface TestSettingsData {
+  theme: string;
+  telemetry: boolean;
+  autoUpdate: boolean;
+  defaultModel: string;
+  // Optional extended properties used in some tests
+  maxThinkingTokens?: number;
+  parallelBuilds?: number;
+  debugMode?: boolean;
+}
+
 // Sample project data
-function createTestProject(overrides: Record<string, unknown> = {}): object {
+function createTestProject(overrides: Partial<TestProjectData> = {}): TestProjectData {
   return {
     id: 'project-001',
     name: 'Test Project',
@@ -60,7 +97,7 @@ function createTestProject(overrides: Record<string, unknown> = {}): object {
 }
 
 // Sample task data
-function createTestTask(overrides: Record<string, unknown> = {}): object {
+function createTestTask(overrides: Partial<TestTaskData> = {}): TestTaskData {
   return {
     id: 'task-001',
     projectId: 'project-001',
@@ -74,7 +111,7 @@ function createTestTask(overrides: Record<string, unknown> = {}): object {
 }
 
 // Sample settings data
-function createTestSettings(overrides: Record<string, unknown> = {}): object {
+function createTestSettings(overrides: Partial<TestSettingsData> = {}): TestSettingsData {
   return {
     theme: 'system',
     telemetry: true,

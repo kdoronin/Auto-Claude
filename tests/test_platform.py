@@ -706,11 +706,15 @@ class TestPathSeparatorEdgeCases:
         # Windows can accept forward slashes in many contexts
         assert validate_cli_path('C:/Program Files/app.exe') is True
 
-    def test_path_with_multiple_consecutive_separators(self):
-        """Multiple consecutive separators should be handled."""
-        # These are technically valid (OS normalizes them)
-        # But our validation focuses on security, not normalization
-        pass  # No explicit test needed - OS handles this
+    @patch('core.platform.is_windows', return_value=False)
+    @patch('os.path.isfile', return_value=True)
+    def test_path_with_multiple_consecutive_separators(self, mock_isfile, mock_is_windows):
+        """Multiple consecutive separators are valid - OS normalizes them."""
+        # These are technically valid paths; the OS normalizes consecutive separators.
+        # Our validation focuses on security (shell metacharacters, traversal),
+        # not path normalization.
+        assert validate_cli_path('/usr//bin//python') is True
+        assert validate_cli_path('/opt///homebrew/bin/node') is True
 
 
 # ============================================================================
@@ -746,9 +750,12 @@ class TestPathTraversalEdgeCases:
 
     def test_rejects_null_byte_injection(self):
         """Null byte injection attempts should be rejected."""
-        # Null bytes are shell metacharacters in our pattern
-        # The actual null byte would be caught by the metacharacter check
-        pass  # Null bytes handled by shell metacharacter validation
+        # Null bytes can be used for path truncation attacks where
+        # "malware.exe\x00.txt" might bypass extension checks.
+        # Our validation explicitly rejects null bytes.
+        assert validate_cli_path('app\x00.exe') is False
+        assert validate_cli_path('/usr/bin/python\x00') is False
+        assert validate_cli_path('malware.exe\x00.txt') is False
 
     def test_allows_paths_containing_dots(self):
         """Legitimate paths with dots should be allowed."""
@@ -913,10 +920,12 @@ class TestSpecialPathEdgeCases:
         assert validate_cli_path(None) is False
 
     def test_rejects_whitespace_only_path(self):
-        """Whitespace-only paths should be handled."""
-        # Whitespace is not explicitly rejected but results in invalid file
-        # The function checks if path is falsy first
-        assert validate_cli_path('   ') is True  # May pass validation but fail file check
+        """Whitespace-only paths should be rejected."""
+        # Whitespace-only paths are explicitly rejected for security
+        assert validate_cli_path('   ') is False
+        assert validate_cli_path('\t') is False
+        assert validate_cli_path('\n') is False  # Also rejected by newline pattern
+        assert validate_cli_path(' \t ') is False
 
     @patch('core.platform.is_windows', return_value=True)
     def test_windows_rejects_spaces_in_executable_name(self, mock_is_windows):

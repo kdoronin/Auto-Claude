@@ -9,10 +9,12 @@ Tests the verdict logic for PR reviews including:
 - Branch status handling (BEHIND -> NEEDS_REVISION)
 - CI status impact on verdicts
 - Overall verdict generation from findings
+
+These tests call the actual production helper functions from models.py
+rather than reimplementing the logic inline.
 """
 
 import sys
-from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
@@ -36,6 +38,12 @@ from models import (
     PRReviewFinding,
     ReviewCategory,
     ReviewSeverity,
+    # Import the helper functions for direct testing
+    apply_branch_behind_downgrade,
+    apply_ci_status_override,
+    apply_merge_conflict_override,
+    verdict_from_severity_counts,
+    verdict_to_github_status,
 )
 
 
@@ -83,406 +91,221 @@ class TestMergeVerdictEnum:
 
 
 # ============================================================================
-# Severity to Verdict Mapping Tests
+# Severity to Verdict Mapping Tests (using production helper function)
 # ============================================================================
 
 
 class TestSeverityToVerdictMapping:
-    """Tests for mapping finding severities to verdicts."""
+    """Tests for mapping finding severities to verdicts using verdict_from_severity_counts()."""
 
     def test_critical_severity_maps_to_blocked(self):
         """Test that critical severity findings result in BLOCKED verdict."""
-        # Simulating the verdict logic from followup_reviewer
-        critical_count = 1
-        high_count = 0
-        medium_count = 0
-        low_count = 0
-
-        if critical_count > 0:
-            verdict = MergeVerdict.BLOCKED
-        elif high_count > 0 or medium_count > 0:
-            verdict = MergeVerdict.NEEDS_REVISION
-        elif low_count > 0:
-            verdict = MergeVerdict.READY_TO_MERGE
-        else:
-            verdict = MergeVerdict.READY_TO_MERGE
-
+        verdict = verdict_from_severity_counts(critical_count=1)
         assert verdict == MergeVerdict.BLOCKED
 
     def test_high_severity_maps_to_needs_revision(self):
         """Test that high severity findings result in NEEDS_REVISION verdict."""
-        critical_count = 0
-        high_count = 1
-        medium_count = 0
-        low_count = 0
-
-        if critical_count > 0:
-            verdict = MergeVerdict.BLOCKED
-        elif high_count > 0 or medium_count > 0:
-            verdict = MergeVerdict.NEEDS_REVISION
-        elif low_count > 0:
-            verdict = MergeVerdict.READY_TO_MERGE
-        else:
-            verdict = MergeVerdict.READY_TO_MERGE
-
+        verdict = verdict_from_severity_counts(high_count=1)
         assert verdict == MergeVerdict.NEEDS_REVISION
 
     def test_medium_severity_maps_to_needs_revision(self):
         """Test that medium severity findings result in NEEDS_REVISION verdict."""
-        critical_count = 0
-        high_count = 0
-        medium_count = 1
-        low_count = 0
-
-        if critical_count > 0:
-            verdict = MergeVerdict.BLOCKED
-        elif high_count > 0 or medium_count > 0:
-            verdict = MergeVerdict.NEEDS_REVISION
-        elif low_count > 0:
-            verdict = MergeVerdict.READY_TO_MERGE
-        else:
-            verdict = MergeVerdict.READY_TO_MERGE
-
+        verdict = verdict_from_severity_counts(medium_count=1)
         assert verdict == MergeVerdict.NEEDS_REVISION
 
     def test_low_severity_maps_to_ready_to_merge(self):
         """Test that only low severity findings result in READY_TO_MERGE verdict."""
-        critical_count = 0
-        high_count = 0
-        medium_count = 0
-        low_count = 1
-
-        if critical_count > 0:
-            verdict = MergeVerdict.BLOCKED
-        elif high_count > 0 or medium_count > 0:
-            verdict = MergeVerdict.NEEDS_REVISION
-        elif low_count > 0:
-            verdict = MergeVerdict.READY_TO_MERGE
-        else:
-            verdict = MergeVerdict.READY_TO_MERGE
-
+        verdict = verdict_from_severity_counts(low_count=1)
         assert verdict == MergeVerdict.READY_TO_MERGE
 
     def test_no_findings_maps_to_ready_to_merge(self):
         """Test that no findings results in READY_TO_MERGE verdict."""
-        critical_count = 0
-        high_count = 0
-        medium_count = 0
-        low_count = 0
-
-        if critical_count > 0:
-            verdict = MergeVerdict.BLOCKED
-        elif high_count > 0 or medium_count > 0:
-            verdict = MergeVerdict.NEEDS_REVISION
-        elif low_count > 0:
-            verdict = MergeVerdict.READY_TO_MERGE
-        else:
-            verdict = MergeVerdict.READY_TO_MERGE
-
+        verdict = verdict_from_severity_counts()
         assert verdict == MergeVerdict.READY_TO_MERGE
 
     def test_mixed_severities_uses_highest(self):
         """Test that mixed severities use the highest severity for verdict."""
         # If there's any critical, it's BLOCKED
-        critical_count = 1
-        high_count = 2
-        medium_count = 3
-        low_count = 5
-
-        if critical_count > 0:
-            verdict = MergeVerdict.BLOCKED
-        elif high_count > 0 or medium_count > 0:
-            verdict = MergeVerdict.NEEDS_REVISION
-        else:
-            verdict = MergeVerdict.READY_TO_MERGE
-
+        verdict = verdict_from_severity_counts(
+            critical_count=1, high_count=2, medium_count=3, low_count=5
+        )
         assert verdict == MergeVerdict.BLOCKED
 
 
 # ============================================================================
-# Merge Conflict Verdict Tests
+# Merge Conflict Verdict Tests (using production helper function)
 # ============================================================================
 
 
 class TestMergeConflictVerdict:
-    """Tests for merge conflict impact on verdict."""
+    """Tests for merge conflict impact on verdict using apply_merge_conflict_override()."""
 
     def test_merge_conflict_overrides_to_blocked(self):
         """Test that merge conflicts always result in BLOCKED verdict."""
-        has_merge_conflicts = True
-        ai_verdict = MergeVerdict.READY_TO_MERGE
-
-        if has_merge_conflicts:
-            verdict = MergeVerdict.BLOCKED
-            reasoning = "Blocked: PR has merge conflicts with base branch."
-        else:
-            verdict = ai_verdict
-            reasoning = ""
-
+        verdict = apply_merge_conflict_override(
+            verdict=MergeVerdict.READY_TO_MERGE,
+            has_merge_conflicts=True,
+        )
         assert verdict == MergeVerdict.BLOCKED
-        assert "merge conflicts" in reasoning.lower()
 
     def test_merge_conflict_overrides_merge_with_changes(self):
         """Test that merge conflicts override MERGE_WITH_CHANGES verdict."""
-        has_merge_conflicts = True
-        ai_verdict = MergeVerdict.MERGE_WITH_CHANGES
-
-        if has_merge_conflicts:
-            verdict = MergeVerdict.BLOCKED
-        else:
-            verdict = ai_verdict
-
+        verdict = apply_merge_conflict_override(
+            verdict=MergeVerdict.MERGE_WITH_CHANGES,
+            has_merge_conflicts=True,
+        )
         assert verdict == MergeVerdict.BLOCKED
 
     def test_merge_conflict_overrides_needs_revision(self):
         """Test that merge conflicts override NEEDS_REVISION verdict."""
-        has_merge_conflicts = True
-        ai_verdict = MergeVerdict.NEEDS_REVISION
-
-        if has_merge_conflicts:
-            verdict = MergeVerdict.BLOCKED
-        else:
-            verdict = ai_verdict
-
+        verdict = apply_merge_conflict_override(
+            verdict=MergeVerdict.NEEDS_REVISION,
+            has_merge_conflicts=True,
+        )
         assert verdict == MergeVerdict.BLOCKED
 
     def test_no_merge_conflict_preserves_verdict(self):
         """Test that no merge conflicts preserves the AI verdict."""
-        has_merge_conflicts = False
-        ai_verdict = MergeVerdict.READY_TO_MERGE
-
-        if has_merge_conflicts:
-            verdict = MergeVerdict.BLOCKED
-        else:
-            verdict = ai_verdict
-
+        verdict = apply_merge_conflict_override(
+            verdict=MergeVerdict.READY_TO_MERGE,
+            has_merge_conflicts=False,
+        )
         assert verdict == MergeVerdict.READY_TO_MERGE
 
 
 # ============================================================================
-# Branch Status Verdict Tests
+# Branch Status Verdict Tests (using production helper function)
 # ============================================================================
 
 
 class TestBranchStatusVerdict:
-    """Tests for branch status (BEHIND, DIRTY, etc.) impact on verdict."""
+    """Tests for branch status (BEHIND, DIRTY, etc.) impact on verdict using apply_branch_behind_downgrade()."""
 
     def test_branch_behind_downgrades_ready_to_merge(self):
         """Test that BEHIND status downgrades READY_TO_MERGE to NEEDS_REVISION."""
-        merge_state_status = "BEHIND"
-        verdict = MergeVerdict.READY_TO_MERGE
-        blockers = []
-
-        if merge_state_status == "BEHIND":
-            blockers.append(BRANCH_BEHIND_BLOCKER_MSG)
-            if verdict in (MergeVerdict.READY_TO_MERGE, MergeVerdict.MERGE_WITH_CHANGES):
-                verdict = MergeVerdict.NEEDS_REVISION
-
+        verdict = apply_branch_behind_downgrade(
+            verdict=MergeVerdict.READY_TO_MERGE,
+            merge_state_status="BEHIND",
+        )
         assert verdict == MergeVerdict.NEEDS_REVISION
-        assert len(blockers) == 1
-        assert "out of date" in blockers[0].lower() or "behind" in blockers[0].lower()
 
     def test_branch_behind_downgrades_merge_with_changes(self):
         """Test that BEHIND status downgrades MERGE_WITH_CHANGES to NEEDS_REVISION."""
-        merge_state_status = "BEHIND"
-        verdict = MergeVerdict.MERGE_WITH_CHANGES
-
-        if merge_state_status == "BEHIND":
-            if verdict in (MergeVerdict.READY_TO_MERGE, MergeVerdict.MERGE_WITH_CHANGES):
-                verdict = MergeVerdict.NEEDS_REVISION
-
+        verdict = apply_branch_behind_downgrade(
+            verdict=MergeVerdict.MERGE_WITH_CHANGES,
+            merge_state_status="BEHIND",
+        )
         assert verdict == MergeVerdict.NEEDS_REVISION
 
     def test_branch_behind_preserves_blocked(self):
         """Test that BEHIND status does not upgrade BLOCKED verdict."""
-        merge_state_status = "BEHIND"
-        verdict = MergeVerdict.BLOCKED
-
-        if merge_state_status == "BEHIND":
-            if verdict in (MergeVerdict.READY_TO_MERGE, MergeVerdict.MERGE_WITH_CHANGES):
-                verdict = MergeVerdict.NEEDS_REVISION
-
+        verdict = apply_branch_behind_downgrade(
+            verdict=MergeVerdict.BLOCKED,
+            merge_state_status="BEHIND",
+        )
         # Should still be BLOCKED, not downgraded to NEEDS_REVISION
         assert verdict == MergeVerdict.BLOCKED
 
     def test_branch_clean_preserves_verdict(self):
         """Test that CLEAN status preserves the original verdict."""
-        merge_state_status = "CLEAN"
-        verdict = MergeVerdict.READY_TO_MERGE
-
-        if merge_state_status == "BEHIND":
-            verdict = MergeVerdict.NEEDS_REVISION
-
+        verdict = apply_branch_behind_downgrade(
+            verdict=MergeVerdict.READY_TO_MERGE,
+            merge_state_status="CLEAN",
+        )
         assert verdict == MergeVerdict.READY_TO_MERGE
 
     def test_branch_behind_reasoning_is_set(self):
-        """Test that BEHIND status sets appropriate reasoning."""
-        merge_state_status = "BEHIND"
-        verdict = MergeVerdict.READY_TO_MERGE
-        verdict_reasoning = ""
+        """Test that BEHIND status has appropriate reasoning defined."""
+        # Test the constant, not reimplemented logic
+        assert BRANCH_BEHIND_REASONING is not None
+        assert len(BRANCH_BEHIND_REASONING) > 0
 
-        if merge_state_status == "BEHIND":
-            if verdict in (MergeVerdict.READY_TO_MERGE, MergeVerdict.MERGE_WITH_CHANGES):
-                verdict = MergeVerdict.NEEDS_REVISION
-                verdict_reasoning = BRANCH_BEHIND_REASONING
-
+        verdict = apply_branch_behind_downgrade(
+            verdict=MergeVerdict.READY_TO_MERGE,
+            merge_state_status="BEHIND",
+        )
         assert verdict == MergeVerdict.NEEDS_REVISION
-        assert len(verdict_reasoning) > 0
-        assert "update" in verdict_reasoning.lower() or "out of date" in verdict_reasoning.lower()
 
 
 # ============================================================================
-# CI Status Verdict Tests
+# CI Status Verdict Tests (using production helper function)
 # ============================================================================
 
 
 class TestCIStatusVerdict:
-    """Tests for CI status impact on verdict."""
+    """Tests for CI status impact on verdict using apply_ci_status_override()."""
 
     def test_failing_ci_blocks_ready_to_merge(self):
         """Test that failing CI blocks READY_TO_MERGE verdict."""
-        ci_status = {"passing": 5, "failing": 2, "pending": 0, "failed_checks": ["build", "tests"]}
-        verdict = MergeVerdict.READY_TO_MERGE
-        blockers = []
-
-        failing_ci = ci_status.get("failing", 0)
-        if failing_ci > 0:
-            if verdict in (MergeVerdict.READY_TO_MERGE, MergeVerdict.MERGE_WITH_CHANGES):
-                blockers.append(f"CI Failing: {failing_ci} check(s) failing")
-                verdict = MergeVerdict.BLOCKED
-
+        verdict = apply_ci_status_override(
+            verdict=MergeVerdict.READY_TO_MERGE,
+            failing_count=2,
+        )
         assert verdict == MergeVerdict.BLOCKED
-        assert len(blockers) == 1
-        assert "failing" in blockers[0].lower()
 
     def test_failing_ci_blocks_merge_with_changes(self):
         """Test that failing CI blocks MERGE_WITH_CHANGES verdict."""
-        ci_status = {"failing": 1}
-        verdict = MergeVerdict.MERGE_WITH_CHANGES
-
-        failing_ci = ci_status.get("failing", 0)
-        if failing_ci > 0:
-            if verdict in (MergeVerdict.READY_TO_MERGE, MergeVerdict.MERGE_WITH_CHANGES):
-                verdict = MergeVerdict.BLOCKED
-
+        verdict = apply_ci_status_override(
+            verdict=MergeVerdict.MERGE_WITH_CHANGES,
+            failing_count=1,
+        )
         assert verdict == MergeVerdict.BLOCKED
 
     def test_pending_ci_downgrades_ready_to_merge(self):
         """Test that pending CI downgrades READY_TO_MERGE to NEEDS_REVISION."""
-        ci_status = {"passing": 3, "failing": 0, "pending": 2}
-        verdict = MergeVerdict.READY_TO_MERGE
-
-        pending_ci = ci_status.get("pending", 0)
-        failing_ci = ci_status.get("failing", 0)
-
-        if failing_ci > 0:
-            verdict = MergeVerdict.BLOCKED
-        elif pending_ci > 0:
-            if verdict in (MergeVerdict.READY_TO_MERGE, MergeVerdict.MERGE_WITH_CHANGES):
-                verdict = MergeVerdict.NEEDS_REVISION
-
+        verdict = apply_ci_status_override(
+            verdict=MergeVerdict.READY_TO_MERGE,
+            pending_count=2,
+        )
         assert verdict == MergeVerdict.NEEDS_REVISION
 
     def test_all_ci_passing_preserves_verdict(self):
         """Test that all passing CI preserves the verdict."""
-        ci_status = {"passing": 10, "failing": 0, "pending": 0}
-        verdict = MergeVerdict.READY_TO_MERGE
-
-        failing_ci = ci_status.get("failing", 0)
-        pending_ci = ci_status.get("pending", 0)
-
-        if failing_ci > 0:
-            verdict = MergeVerdict.BLOCKED
-        elif pending_ci > 0:
-            if verdict in (MergeVerdict.READY_TO_MERGE, MergeVerdict.MERGE_WITH_CHANGES):
-                verdict = MergeVerdict.NEEDS_REVISION
-
+        verdict = apply_ci_status_override(
+            verdict=MergeVerdict.READY_TO_MERGE,
+            failing_count=0,
+            pending_count=0,
+        )
         assert verdict == MergeVerdict.READY_TO_MERGE
 
     def test_failing_ci_takes_precedence_over_pending(self):
         """Test that failing CI takes precedence over pending CI."""
-        ci_status = {"passing": 3, "failing": 1, "pending": 2}
-        verdict = MergeVerdict.READY_TO_MERGE
-
-        failing_ci = ci_status.get("failing", 0)
-        pending_ci = ci_status.get("pending", 0)
-
-        if failing_ci > 0:
-            verdict = MergeVerdict.BLOCKED
-        elif pending_ci > 0:
-            verdict = MergeVerdict.NEEDS_REVISION
-
+        verdict = apply_ci_status_override(
+            verdict=MergeVerdict.READY_TO_MERGE,
+            failing_count=1,
+            pending_count=2,
+        )
         # Should be BLOCKED (failing), not NEEDS_REVISION (pending)
         assert verdict == MergeVerdict.BLOCKED
 
 
 # ============================================================================
-# Verdict to Overall Status Mapping Tests
+# Verdict to Overall Status Mapping Tests (using production helper function)
 # ============================================================================
 
 
 class TestVerdictToOverallStatusMapping:
-    """Tests for mapping verdict to GitHub review overall_status."""
+    """Tests for mapping verdict to GitHub review overall_status using verdict_to_github_status()."""
 
     def test_blocked_maps_to_request_changes(self):
         """Test that BLOCKED verdict maps to request_changes status."""
-        verdict = MergeVerdict.BLOCKED
-
-        if verdict == MergeVerdict.BLOCKED:
-            overall_status = "request_changes"
-        elif verdict == MergeVerdict.NEEDS_REVISION:
-            overall_status = "request_changes"
-        elif verdict == MergeVerdict.MERGE_WITH_CHANGES:
-            overall_status = "comment"
-        else:
-            overall_status = "approve"
-
-        assert overall_status == "request_changes"
+        status = verdict_to_github_status(MergeVerdict.BLOCKED)
+        assert status == "request_changes"
 
     def test_needs_revision_maps_to_request_changes(self):
         """Test that NEEDS_REVISION verdict maps to request_changes status."""
-        verdict = MergeVerdict.NEEDS_REVISION
-
-        if verdict == MergeVerdict.BLOCKED:
-            overall_status = "request_changes"
-        elif verdict == MergeVerdict.NEEDS_REVISION:
-            overall_status = "request_changes"
-        elif verdict == MergeVerdict.MERGE_WITH_CHANGES:
-            overall_status = "comment"
-        else:
-            overall_status = "approve"
-
-        assert overall_status == "request_changes"
+        status = verdict_to_github_status(MergeVerdict.NEEDS_REVISION)
+        assert status == "request_changes"
 
     def test_merge_with_changes_maps_to_comment(self):
         """Test that MERGE_WITH_CHANGES verdict maps to comment status."""
-        verdict = MergeVerdict.MERGE_WITH_CHANGES
-
-        if verdict == MergeVerdict.BLOCKED:
-            overall_status = "request_changes"
-        elif verdict == MergeVerdict.NEEDS_REVISION:
-            overall_status = "request_changes"
-        elif verdict == MergeVerdict.MERGE_WITH_CHANGES:
-            overall_status = "comment"
-        else:
-            overall_status = "approve"
-
-        assert overall_status == "comment"
+        status = verdict_to_github_status(MergeVerdict.MERGE_WITH_CHANGES)
+        assert status == "comment"
 
     def test_ready_to_merge_maps_to_approve(self):
         """Test that READY_TO_MERGE verdict maps to approve status."""
-        verdict = MergeVerdict.READY_TO_MERGE
-
-        if verdict == MergeVerdict.BLOCKED:
-            overall_status = "request_changes"
-        elif verdict == MergeVerdict.NEEDS_REVISION:
-            overall_status = "request_changes"
-        elif verdict == MergeVerdict.MERGE_WITH_CHANGES:
-            overall_status = "comment"
-        else:
-            overall_status = "approve"
-
-        assert overall_status == "approve"
+        status = verdict_to_github_status(MergeVerdict.READY_TO_MERGE)
+        assert status == "approve"
 
 
 # ============================================================================
@@ -621,141 +444,76 @@ class TestBlockerGeneration:
         assert any("SQL Injection" in b for b in blockers)
         assert any("Memory Leak" in b for b in blockers)
 
-    def test_merge_conflict_blocker(self):
-        """Test that merge conflicts generate specific blocker."""
-        has_merge_conflicts = True
-        blockers = []
-
-        if has_merge_conflicts:
-            blockers.append(
-                "Merge Conflicts: PR has conflicts with base branch that must be resolved"
-            )
-
-        assert len(blockers) == 1
-        assert "merge conflicts" in blockers[0].lower()
-
 
 # ============================================================================
-# Combined Scenario Tests
+# Combined Scenario Tests (using production helper functions)
 # ============================================================================
 
 
 class TestCombinedVerdictScenarios:
-    """Tests for complex scenarios with multiple verdict factors."""
+    """Tests for complex scenarios with multiple verdict factors using production helpers."""
 
     def test_merge_conflict_overrides_ci_passing(self):
         """Test that merge conflicts override passing CI."""
-        has_merge_conflicts = True
-        ci_status = {"passing": 10, "failing": 0, "pending": 0}
-        verdict = MergeVerdict.READY_TO_MERGE
+        # Start with base verdict
+        verdict = verdict_from_severity_counts()
+        assert verdict == MergeVerdict.READY_TO_MERGE
 
-        # Apply merge conflict check first (highest priority)
-        if has_merge_conflicts:
-            verdict = MergeVerdict.BLOCKED
-        # Then CI check
-        elif ci_status.get("failing", 0) > 0:
-            verdict = MergeVerdict.BLOCKED
-
+        # Apply merge conflict (highest priority)
+        verdict = apply_merge_conflict_override(verdict, has_merge_conflicts=True)
         assert verdict == MergeVerdict.BLOCKED
 
     def test_merge_conflict_combined_with_critical_finding(self):
         """Test merge conflict combined with critical finding."""
-        has_merge_conflicts = True
-        critical_count = 1
-        blockers = []
-
-        if has_merge_conflicts:
-            blockers.append("Merge Conflicts")
-            verdict = MergeVerdict.BLOCKED
-
-        if critical_count > 0:
-            blockers.append("Critical Finding")
-            verdict = MergeVerdict.BLOCKED
-
+        # Both lead to BLOCKED, but for different reasons
+        verdict = verdict_from_severity_counts(critical_count=1)
         assert verdict == MergeVerdict.BLOCKED
-        assert len(blockers) == 2
+
+        verdict = apply_merge_conflict_override(verdict, has_merge_conflicts=True)
+        assert verdict == MergeVerdict.BLOCKED
 
     def test_failing_ci_overrides_branch_behind(self):
         """Test that failing CI takes precedence over branch behind."""
-        merge_state_status = "BEHIND"
-        ci_status = {"failing": 1, "pending": 0}
         verdict = MergeVerdict.READY_TO_MERGE
 
-        # Check CI first (higher priority)
-        failing_ci = ci_status.get("failing", 0)
-        if failing_ci > 0:
-            verdict = MergeVerdict.BLOCKED
-        elif merge_state_status == "BEHIND":
-            verdict = MergeVerdict.NEEDS_REVISION
+        # Apply CI check first (higher priority than branch status)
+        verdict = apply_ci_status_override(verdict, failing_count=1)
+        assert verdict == MergeVerdict.BLOCKED
 
+        # Branch behind doesn't change BLOCKED to NEEDS_REVISION
+        verdict = apply_branch_behind_downgrade(verdict, merge_state_status="BEHIND")
         assert verdict == MergeVerdict.BLOCKED
 
     def test_branch_behind_combined_with_low_findings(self):
         """Test branch behind with only low severity findings."""
-        merge_state_status = "BEHIND"
-        low_count = 3
-        critical_count = 0
-        high_count = 0
-        medium_count = 0
-
         # Determine base verdict from findings
-        if critical_count > 0:
-            verdict = MergeVerdict.BLOCKED
-        elif high_count > 0 or medium_count > 0:
-            verdict = MergeVerdict.NEEDS_REVISION
-        elif low_count > 0:
-            verdict = MergeVerdict.READY_TO_MERGE
-        else:
-            verdict = MergeVerdict.READY_TO_MERGE
+        verdict = verdict_from_severity_counts(low_count=3)
+        assert verdict == MergeVerdict.READY_TO_MERGE
 
-        # Apply branch status
-        if merge_state_status == "BEHIND":
-            if verdict in (MergeVerdict.READY_TO_MERGE, MergeVerdict.MERGE_WITH_CHANGES):
-                verdict = MergeVerdict.NEEDS_REVISION
-
+        # Apply branch status - downgrades to NEEDS_REVISION
+        verdict = apply_branch_behind_downgrade(verdict, merge_state_status="BEHIND")
         assert verdict == MergeVerdict.NEEDS_REVISION
 
     def test_all_clear_scenario(self):
         """Test scenario with no blockers at all."""
-        has_merge_conflicts = False
-        merge_state_status = "CLEAN"
-        ci_status = {"passing": 5, "failing": 0, "pending": 0}
-        critical_count = 0
-        high_count = 0
-        medium_count = 0
-        low_count = 0
+        # Determine verdict from findings (none)
+        verdict = verdict_from_severity_counts()
+        assert verdict == MergeVerdict.READY_TO_MERGE
 
-        # Determine verdict from findings
-        if critical_count > 0:
-            verdict = MergeVerdict.BLOCKED
-        elif high_count > 0 or medium_count > 0:
-            verdict = MergeVerdict.NEEDS_REVISION
-        else:
-            verdict = MergeVerdict.READY_TO_MERGE
+        # Apply merge conflict check (none)
+        verdict = apply_merge_conflict_override(verdict, has_merge_conflicts=False)
+        assert verdict == MergeVerdict.READY_TO_MERGE
 
-        # Apply merge conflict check
-        if has_merge_conflicts:
-            verdict = MergeVerdict.BLOCKED
+        # Apply CI check (all passing)
+        verdict = apply_ci_status_override(verdict, failing_count=0, pending_count=0)
+        assert verdict == MergeVerdict.READY_TO_MERGE
 
-        # Apply CI check
-        if ci_status.get("failing", 0) > 0:
-            verdict = MergeVerdict.BLOCKED
-        elif ci_status.get("pending", 0) > 0:
-            if verdict == MergeVerdict.READY_TO_MERGE:
-                verdict = MergeVerdict.NEEDS_REVISION
-
-        # Apply branch status
-        if merge_state_status == "BEHIND":
-            if verdict == MergeVerdict.READY_TO_MERGE:
-                verdict = MergeVerdict.NEEDS_REVISION
-
+        # Apply branch status (clean)
+        verdict = apply_branch_behind_downgrade(verdict, merge_state_status="CLEAN")
         assert verdict == MergeVerdict.READY_TO_MERGE
 
     def test_only_low_findings_with_passing_ci(self):
         """Test that only low findings with passing CI is READY_TO_MERGE."""
-        has_merge_conflicts = False
-        merge_state_status = "CLEAN"
-        ci_status = {"passing": 3, "failing": 0, "pending": 0}
         findings = [
             PRReviewFinding(
                 id="STYLE-001",
@@ -772,20 +530,19 @@ class TestCombinedVerdictScenarios:
         critical_count = sum(1 for f in findings if f.severity == ReviewSeverity.CRITICAL)
         high_count = sum(1 for f in findings if f.severity == ReviewSeverity.HIGH)
         medium_count = sum(1 for f in findings if f.severity == ReviewSeverity.MEDIUM)
+        low_count = sum(1 for f in findings if f.severity == ReviewSeverity.LOW)
 
-        # Determine verdict
-        if critical_count > 0:
-            verdict = MergeVerdict.BLOCKED
-        elif high_count > 0 or medium_count > 0:
-            verdict = MergeVerdict.NEEDS_REVISION
-        else:
-            verdict = MergeVerdict.READY_TO_MERGE
+        # Use production helper
+        verdict = verdict_from_severity_counts(
+            critical_count=critical_count,
+            high_count=high_count,
+            medium_count=medium_count,
+            low_count=low_count,
+        )
 
         # Apply other checks (all clean)
-        if has_merge_conflicts:
-            verdict = MergeVerdict.BLOCKED
-        if ci_status.get("failing", 0) > 0:
-            verdict = MergeVerdict.BLOCKED
+        verdict = apply_merge_conflict_override(verdict, has_merge_conflicts=False)
+        verdict = apply_ci_status_override(verdict, failing_count=0, pending_count=0)
 
         assert verdict == MergeVerdict.READY_TO_MERGE
 
