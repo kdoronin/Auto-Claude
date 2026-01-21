@@ -41,6 +41,11 @@ export {
   getTasksByPhase,
   getInterviewMessageCount,
   hasUnsavedChanges,
+  // Session persistence utilities
+  isStoreHydrated,
+  waitForHydration,
+  hasResumableSession,
+  getResumableSessionInfo,
 } from '../../stores/architect';
 
 // ============================================

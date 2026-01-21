@@ -36,8 +36,11 @@ function toSessionSummary(session: ArchitectSession): ArchitectSessionSummary {
   };
 }
 
-// Helper to serialize dates for storage
-function serializeSession(session: ArchitectSession): ArchitectSession {
+/**
+ * Rehydrate a full session from storage, converting date strings back to Date objects.
+ * This is needed because JSON storage serializes dates as strings.
+ */
+function rehydrateSession(session: ArchitectSession): ArchitectSession {
   return {
     ...session,
     createdAt: session.createdAt instanceof Date ? session.createdAt : new Date(session.createdAt),
@@ -53,6 +56,24 @@ function serializeSession(session: ArchitectSession): ArchitectSession {
     }))
   };
 }
+
+/**
+ * Rehydrate a session summary from storage, converting date strings back to Date objects.
+ */
+function rehydrateSummary(summary: ArchitectSessionSummary): ArchitectSessionSummary {
+  return {
+    ...summary,
+    createdAt: summary.createdAt instanceof Date ? summary.createdAt : new Date(summary.createdAt),
+    updatedAt: summary.updatedAt instanceof Date ? summary.updatedAt : new Date(summary.updatedAt)
+  };
+}
+
+/**
+ * Maximum number of messages to persist in localStorage.
+ * Very large conversation histories should be truncated to avoid localStorage limits.
+ * Messages beyond this limit are preserved in memory during the session but not persisted.
+ */
+const MAX_PERSISTED_MESSAGES = 500;
 
 // Initial state
 const initialState: ArchitectState = {
@@ -554,25 +575,66 @@ export const useArchitectStore = create<ArchitectStore>()(
     {
       name: 'architect-storage',
       storage: createJSONStorage(() => localStorage),
-      // Only persist essential data - large conversation history should go to file storage
-      partialize: (state) => ({
-        sessions: state.sessions,
-        // Don't persist currentSession - it will be loaded fresh
-        // Don't persist transient states like isLoading, isStreaming, error
-      }),
-      // Handle date deserialization
-      onRehydrate: (state) => {
+      // Persist sessions and current session for resume capability
+      // Transient states (isLoading, isStreaming, error) are not persisted
+      partialize: (state) => {
+        // Prepare currentSession for persistence
+        // Truncate very large conversation histories to avoid localStorage limits
+        let persistedCurrentSession = state.currentSession;
+        if (persistedCurrentSession && persistedCurrentSession.interviewHistory.length > MAX_PERSISTED_MESSAGES) {
+          // Keep only the most recent messages for persistence
+          // The full history is preserved in memory during the session
+          persistedCurrentSession = {
+            ...persistedCurrentSession,
+            interviewHistory: persistedCurrentSession.interviewHistory.slice(-MAX_PERSISTED_MESSAGES)
+          };
+        }
+
+        return {
+          sessions: state.sessions,
+          // Persist currentSession for resume capability
+          // On app reopen, the last active session is automatically restored
+          currentSession: persistedCurrentSession
+        };
+      },
+      // Handle date deserialization on app start
+      onRehydrate: (_state) => {
         return (rehydratedState, error) => {
           if (error) {
             console.error('[ArchitectStore] Failed to rehydrate:', error);
-          } else if (rehydratedState?.sessions) {
-            // Convert date strings back to Date objects
-            rehydratedState.sessions = rehydratedState.sessions.map(session => ({
-              ...session,
-              createdAt: new Date(session.createdAt),
-              updatedAt: new Date(session.updatedAt)
-            }));
+            return;
           }
+
+          if (!rehydratedState) {
+            return;
+          }
+
+          // Rehydrate session summaries with proper Date objects
+          if (rehydratedState.sessions) {
+            rehydratedState.sessions = rehydratedState.sessions.map(rehydrateSummary);
+          }
+
+          // Rehydrate current session with proper Date objects
+          if (rehydratedState.currentSession) {
+            rehydratedState.currentSession = rehydrateSession(rehydratedState.currentSession);
+
+            // Reset streaming state - we can't resume a streaming response
+            // If the app was closed during streaming, the response is lost
+            if (rehydratedState.currentSession.interviewHistory.length > 0) {
+              const lastMessage = rehydratedState.currentSession.interviewHistory[
+                rehydratedState.currentSession.interviewHistory.length - 1
+              ];
+              // If the last message was still streaming, mark it as complete
+              if (lastMessage.isStreaming) {
+                lastMessage.isStreaming = false;
+              }
+            }
+          }
+
+          // Reset transient states that shouldn't persist
+          rehydratedState.isLoading = false;
+          rehydratedState.isStreaming = false;
+          rehydratedState.error = null;
         };
       }
     }
@@ -712,4 +774,54 @@ export function getInterviewMessageCount(): number {
  */
 export function hasUnsavedChanges(): boolean {
   return useArchitectStore.getState().currentSession?.isDirty ?? false;
+}
+
+/**
+ * Check if the store has been rehydrated from localStorage.
+ * Useful for components that need to wait for persisted state.
+ */
+export function isStoreHydrated(): boolean {
+  // Zustand persist middleware adds hasHydrated method
+  return (useArchitectStore.persist as { hasHydrated?: () => boolean }).hasHydrated?.() ?? false;
+}
+
+/**
+ * Wait for the store to be hydrated from localStorage.
+ * Returns a promise that resolves when hydration is complete.
+ */
+export function waitForHydration(): Promise<void> {
+  return new Promise((resolve) => {
+    if (isStoreHydrated()) {
+      resolve();
+      return;
+    }
+
+    // Subscribe to hydration event
+    const unsubscribe = useArchitectStore.persist.onFinishHydration(() => {
+      unsubscribe();
+      resolve();
+    });
+  });
+}
+
+/**
+ * Check if there's a persisted session available to resume.
+ * This can be checked after hydration to determine if the user
+ * was in the middle of a session when they last closed the app.
+ */
+export function hasResumableSession(): boolean {
+  const currentSession = useArchitectStore.getState().currentSession;
+  return currentSession !== null;
+}
+
+/**
+ * Get summary of the current resumable session.
+ * Returns null if no session to resume.
+ */
+export function getResumableSessionInfo(): ArchitectSessionSummary | null {
+  const currentSession = useArchitectStore.getState().currentSession;
+  if (!currentSession) {
+    return null;
+  }
+  return toSessionSummary(currentSession);
 }
