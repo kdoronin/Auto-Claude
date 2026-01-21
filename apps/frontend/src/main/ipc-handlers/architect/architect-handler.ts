@@ -19,6 +19,7 @@ import type {
 import { safeSendToRenderer } from '../utils';
 import { debugLog, debugError } from '../../../shared/utils/debug-logger';
 import { projectStore } from '../../project-store';
+import { ARCHITECT_SYSTEM_PROMPT, ARCHITECT_CONFIG } from './prompts';
 
 // ============================================
 // IPC Channel Names for Architect
@@ -39,42 +40,6 @@ export const ARCHITECT_IPC_CHANNELS = {
   INTERVIEW_ERROR: 'architect:interviewError',
   INTERVIEW_STOPPED: 'architect:interviewStopped',
 } as const;
-
-// ============================================
-// System Prompt for Architect AI
-// ============================================
-
-const ARCHITECT_SYSTEM_PROMPT = `You are an expert software architect conducting a deep discovery interview.
-Your goals:
-1. Ask comprehensive questions to fully understand the project
-2. Cover all aspects: business requirements, technical constraints, integrations, security, scale
-3. Generate architectural schemas in Mermaid.js format
-4. Decompose entities into logical modules
-5. Create detailed task descriptions for implementation
-
-Output schemas using these Mermaid types as appropriate:
-- flowchart: For system flows and data pipelines
-- classDiagram: For entity relationships
-- sequenceDiagram: For API interactions
-- erDiagram: For database schemas
-- C4Context/C4Container: For high-level architecture
-
-When generating Mermaid diagrams:
-- Always wrap in \`\`\`mermaid code blocks
-- Include clear titles for each diagram
-- Use descriptive node names
-- Add comments to explain complex relationships
-
-Interview phases:
-1. Project Overview: Understand the high-level goals and context
-2. Technical Requirements: Dive into tech stack, constraints, and integrations
-3. User Flows: Map out key user journeys and interactions
-4. Data Model: Define entities, relationships, and data flows
-5. Security & Scale: Address security requirements and scalability needs
-6. Implementation Planning: Break down into modules and tasks
-
-Ask one focused question at a time. Wait for the user's response before proceeding.
-Build on their answers to ask deeper follow-up questions.`;
 
 // ============================================
 // Active Interview Tracking
@@ -277,12 +242,12 @@ async function runArchitectInterview(
     options: {
       systemPrompt: {
         type: 'preset',
-        preset: 'claude_code',
+        preset: ARCHITECT_CONFIG.systemPromptPreset,
         append: ARCHITECT_SYSTEM_PROMPT,
       },
-      maxThinkingTokens: 32000, // Ultra Think mode (~32k thinking tokens)
-      permissionMode: 'plan', // No file modifications, planning only
-      settingSources: ['project'],
+      maxThinkingTokens: ARCHITECT_CONFIG.maxThinkingTokens, // Ultra Think mode (~32k thinking tokens)
+      permissionMode: ARCHITECT_CONFIG.permissionMode, // No file modifications, planning only
+      settingSources: [...ARCHITECT_CONFIG.settingSources],
     },
   })) {
     // Check for abort
