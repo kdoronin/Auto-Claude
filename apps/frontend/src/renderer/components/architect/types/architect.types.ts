@@ -226,7 +226,7 @@ export interface ArchitectActions {
   /** Validate a task */
   validateTask: (taskId: string) => void;
   /** Export tasks to Kanban Board */
-  exportTasksToKanban: (taskIds: string[]) => Promise<void>;
+  exportTasksToKanban: (taskIds: string[], kanbanTaskIdMap?: Map<string, string>) => Promise<void>;
   /** Save current session to storage */
   saveSession: () => Promise<void>;
   /** Clear current session */

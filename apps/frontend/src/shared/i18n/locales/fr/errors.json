@@ -5,5 +5,17 @@
       "titleSuffix": "(Erreur JSON)",
       "description": "⚠️ Erreur d'analyse JSON : {{error}}\n\nLe fichier implementation_plan.json est malformé. Exécutez la correction automatique du backend ou réparez le fichier manuellement."
     }
+  },
+  "architect": {
+    "noTasksSelected": "Aucune tâche sélectionnée",
+    "selectTasksToExport": "Veuillez sélectionner au moins une tâche à exporter.",
+    "exportValidationFailed": "Échec de la validation de l'exportation",
+    "exportFailed": "Échec de l'exportation",
+    "taskGenerationFailed": "Échec de la génération des tâches",
+    "noModules": "Aucun module disponible",
+    "generateModulesFirst": "Veuillez d'abord générer les modules avant de créer des tâches.",
+    "taskValidationFailed": "Échec de la validation de la tâche",
+    "cannotInvalidateExported": "Impossible d'invalider une tâche exportée",
+    "taskAlreadyExported": "Cette tâche a déjà été exportée vers le tableau Kanban."
   }
 }

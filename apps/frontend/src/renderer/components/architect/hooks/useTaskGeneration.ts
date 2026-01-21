@@ -8,13 +8,14 @@
  * - useArchitectSession.ts for IPC communication
  * - taskFormatter.ts for task formatting utilities
  */
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from '../../../hooks/use-toast';
 import {
   useArchitectStore,
   exportTasksToKanban as exportTasksToKanbanAction,
 } from '../../../stores/architect';
+import { createTask } from '../../../stores/task-store';
 import {
   formatTask,
   formatForKanban,
@@ -537,15 +538,86 @@ export function useTaskGeneration(
           });
         }
 
-        // Call store action to mark tasks as exported and integrate with Kanban
-        await exportTasksToKanbanAction(taskIds);
+        // Create tasks in the Kanban Board via task-store
+        // This actually creates the tasks and makes them appear in the Kanban Board
+        const createdTaskIds: string[] = [];
+        const creationErrors: string[] = [];
+        // Map of architect task ID -> actual kanban task ID (for storing reference)
+        const architectToKanbanIdMap = new Map<string, string>();
 
-        toast({
-          title: t('common:actions.exported'),
-          description: t('common:architect.tasksExported', {
-            count: result.tasks.length,
-          }),
-        });
+        for (const kanbanTask of result.tasks) {
+          try {
+            const createdTask = await createTask(
+              projectId,
+              kanbanTask.title,
+              kanbanTask.description,
+              kanbanTask.metadata
+            );
+
+            if (createdTask) {
+              createdTaskIds.push(createdTask.id);
+              // Find the original architect task ID for this kanban task
+              // and store the mapping to the actual created task ID
+              for (const [architectId, kanbanId] of result.taskIdMap.entries()) {
+                if (kanbanId === kanbanTask.id) {
+                  result.taskIdMap.set(architectId, createdTask.id);
+                  architectToKanbanIdMap.set(architectId, createdTask.id);
+                  break;
+                }
+              }
+            } else {
+              creationErrors.push(`Failed to create task: ${kanbanTask.title}`);
+            }
+          } catch (taskError) {
+            creationErrors.push(
+              `Error creating task "${kanbanTask.title}": ${
+                taskError instanceof Error ? taskError.message : String(taskError)
+              }`
+            );
+          }
+        }
+
+        // If any tasks failed to create, show errors
+        if (creationErrors.length > 0) {
+          result.errors.push(...creationErrors);
+
+          // If all tasks failed, don't mark as exported
+          if (createdTaskIds.length === 0) {
+            toast({
+              variant: 'destructive',
+              title: t('errors:architect.exportFailed'),
+              description: creationErrors.slice(0, 3).join('\n'),
+            });
+            return result;
+          }
+
+          // Partial success - show warning
+          toast({
+            variant: 'default',
+            title: t('common:architect.partialExportSuccess'),
+            description: t('common:architect.someTasksFailedToExport', {
+              success: createdTaskIds.length,
+              failed: creationErrors.length,
+            }),
+          });
+        }
+
+        // Mark successfully exported tasks in the architect store
+        // Pass the kanban task ID map so the store can save the reference
+        const successfullyExportedIds = Array.from(architectToKanbanIdMap.keys());
+
+        if (successfullyExportedIds.length > 0) {
+          await exportTasksToKanbanAction(successfullyExportedIds, architectToKanbanIdMap);
+        }
+
+        if (creationErrors.length === 0) {
+          toast({
+            title: t('common:actions.exported'),
+            description: t('common:architect.tasksExported', {
+              count: result.tasks.length,
+            }),
+          });
+        }
 
         return result;
       } catch (err) {

@@ -358,8 +358,10 @@ export const useArchitectStore = create<ArchitectStore>()(
 
       /**
        * Export tasks to Kanban Board
+       * @param taskIds - IDs of architect tasks to mark as exported
+       * @param kanbanTaskIdMap - Optional map of architect task ID to kanban task ID
        */
-      exportTasksToKanban: async (taskIds: string[]) => {
+      exportTasksToKanban: async (taskIds: string[], kanbanTaskIdMap?: Map<string, string>) => {
         const { currentSession } = get();
         if (!currentSession) {
           set({ error: 'No active session' });
@@ -369,17 +371,21 @@ export const useArchitectStore = create<ArchitectStore>()(
         set({ isLoading: true, error: null });
 
         try {
-          // TODO: Call IPC to export tasks to Kanban
-          // For now, just mark tasks as exported
-
           set((state) => {
             if (!state.currentSession) return state;
 
-            const updatedTasks = state.currentSession.tasks.map(task =>
-              taskIds.includes(task.id)
-                ? { ...task, status: 'exported' as const }
-                : task
-            );
+            const updatedTasks = state.currentSession.tasks.map(task => {
+              if (taskIds.includes(task.id)) {
+                // Get the kanban task ID if available
+                const kanbanTaskId = kanbanTaskIdMap?.get(task.id);
+                return {
+                  ...task,
+                  status: 'exported' as const,
+                  ...(kanbanTaskId ? { kanbanTaskId } : {})
+                };
+              }
+              return task;
+            });
 
             return {
               currentSession: {
@@ -622,10 +628,15 @@ export async function saveArchitectSession(): Promise<void> {
 
 /**
  * Export tasks to Kanban Board
+ * @param taskIds - IDs of architect tasks to mark as exported
+ * @param kanbanTaskIdMap - Optional map of architect task ID to kanban task ID
  */
-export async function exportTasksToKanban(taskIds: string[]): Promise<void> {
+export async function exportTasksToKanban(
+  taskIds: string[],
+  kanbanTaskIdMap?: Map<string, string>
+): Promise<void> {
   const store = useArchitectStore.getState();
-  await store.exportTasksToKanban(taskIds);
+  await store.exportTasksToKanban(taskIds, kanbanTaskIdMap);
 }
 
 // ============================================
