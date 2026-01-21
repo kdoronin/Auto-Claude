@@ -5,5 +5,17 @@
       "titleSuffix": "(JSON Error)",
       "description": "⚠️ JSON Parse Error: {{error}}\n\nThe implementation_plan.json file is malformed. Run the backend auto-fix or manually repair the file."
     }
+  },
+  "architect": {
+    "noTasksSelected": "No Tasks Selected",
+    "selectTasksToExport": "Please select at least one task to export.",
+    "exportValidationFailed": "Export Validation Failed",
+    "exportFailed": "Export Failed",
+    "taskGenerationFailed": "Task Generation Failed",
+    "noModules": "No Modules Available",
+    "generateModulesFirst": "Please generate modules first before creating tasks.",
+    "taskValidationFailed": "Task Validation Failed",
+    "cannotInvalidateExported": "Cannot Invalidate Exported Task",
+    "taskAlreadyExported": "This task has already been exported to the Kanban Board."
   }
 }

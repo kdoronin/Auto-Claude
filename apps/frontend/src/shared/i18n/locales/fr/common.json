@@ -522,5 +522,25 @@
       "technicalDetails": "Détails techniques",
       "goToSettings": "Aller aux paramètres"
     }
-  }
+  },
+  "actions": {
+    "validated": "Tâche validée",
+    "updated": "Tâche mise à jour",
+    "generated": "Tâches générées",
+    "exported": "Tâches exportées"
+  },
+  "architect": {
+    "tasksGenerated": "Tâches générées pour {{count}} module(s)",
+    "taskValidated": "La tâche « {{title}} » a été validée",
+    "taskInvalidated": "La tâche « {{title}} » est revenue à l'état brouillon",
+    "noTasksToValidate": "Aucune tâche brouillon à valider",
+    "tasksValidatedBatch": "{{validated}} tâches validées, {{failed}} ont échoué",
+    "tasksExported": "{{count}} tâche(s) exportée(s) avec succès vers le tableau Kanban",
+    "noValidatedTasksToExport": "Aucune tâche validée disponible pour l'exportation",
+    "noTasksToExport": "Aucune tâche disponible pour l'exportation",
+    "partialExportSuccess": "Exportation partielle",
+    "someTasksFailedToExport": "{{success}} tâche(s) exportée(s), {{failed}} ont échoué"
+  },
+  "warnings": "Avertissements",
+  "info": "Info"
 }

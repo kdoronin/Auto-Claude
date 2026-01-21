@@ -38,6 +38,7 @@ import { Roadmap } from './components/Roadmap';
 import { Context } from './components/Context';
 import { Ideation } from './components/Ideation';
 import { Insights } from './components/Insights';
+import { ArchitectTab } from './components/architect';
 import { GitHubIssues } from './components/GitHubIssues';
 import { GitLabIssues } from './components/GitLabIssues';
 import { GitHubPRs } from './components/github-prs';
@@ -881,6 +882,9 @@ export function App() {
                 )}
                 {activeView === 'ideation' && (activeProjectId || selectedProjectId) && (
                   <Ideation projectId={activeProjectId || selectedProjectId!} onGoToTask={handleGoToTask} />
+                )}
+                {activeView === 'architect' && (activeProjectId || selectedProjectId) && (
+                  <ArchitectTab />
                 )}
                 {activeView === 'insights' && (activeProjectId || selectedProjectId) && (
                   <Insights projectId={activeProjectId || selectedProjectId!} />

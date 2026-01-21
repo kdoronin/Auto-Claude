@@ -522,5 +522,25 @@
       "technicalDetails": "Technical details",
       "goToSettings": "Go to Settings"
     }
-  }
+  },
+  "actions": {
+    "validated": "Task Validated",
+    "updated": "Task Updated",
+    "generated": "Tasks Generated",
+    "exported": "Tasks Exported"
+  },
+  "architect": {
+    "tasksGenerated": "Generated tasks for {{count}} module(s)",
+    "taskValidated": "Task \"{{title}}\" has been validated",
+    "taskInvalidated": "Task \"{{title}}\" moved back to draft",
+    "noTasksToValidate": "No draft tasks to validate",
+    "tasksValidatedBatch": "Validated {{validated}} tasks, {{failed}} failed validation",
+    "tasksExported": "Successfully exported {{count}} task(s) to Kanban Board",
+    "noValidatedTasksToExport": "No validated tasks available to export",
+    "noTasksToExport": "No tasks available to export",
+    "partialExportSuccess": "Partial Export",
+    "someTasksFailedToExport": "{{success}} task(s) exported, {{failed}} failed"
+  },
+  "warnings": "Warnings",
+  "info": "Info"
 }
